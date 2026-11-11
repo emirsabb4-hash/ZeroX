@@ -5529,6 +5529,11 @@ ZX.applyWeaponSkin = function(tool)
 					material     = part.Material,
 					transparency = part.Transparency,
 					texture      = part:IsA("MeshPart") and part.TextureID or (mesh and mesh.TextureId or nil),
+					vertexColor  = mesh and mesh.VertexColor or nil,
+				}
+			elseif part:IsA("Decal") then
+				ZX.orig[tool][part] = {
+					transparency = part.Transparency,
 				}
 			end
 		end
@@ -5541,12 +5546,15 @@ ZX.applyWeaponSkin = function(tool)
 		for part, info in pairs(ZX.orig[tool] or {}) do
 			if part and part.Parent then
 				pcall(function()
-					part.Color        = info.color
-					part.Material     = info.material
-					part.Transparency = info.transparency
+					part.Color        = info.color or part.Color
+					part.Material     = info.material or part.Material
+					part.Transparency = info.transparency or 0
 					if part:IsA("MeshPart") and info.texture then part.TextureID = info.texture end
 					local mesh = part:FindFirstChildOfClass("SpecialMesh")
-					if mesh and info.texture then mesh.TextureId = info.texture end
+					if mesh then
+						if info.texture then mesh.TextureId = info.texture end
+						if info.vertexColor then mesh.VertexColor = info.vertexColor end
+					end
 				end)
 			end
 		end
@@ -5558,17 +5566,30 @@ ZX.applyWeaponSkin = function(tool)
 			pcall(function()
 				if part:IsA("MeshPart") then part.TextureID = "" end
 				local mesh = part:FindFirstChildOfClass("SpecialMesh")
-				if mesh then mesh.TextureId = "" end
+				if mesh then
+					mesh.TextureId   = ""
+					mesh.VertexColor = Vector3.new(1, 1, 1)
+				end
 				part.Color    = entry.color
 				part.Material = entry.mat or Enum.Material.Neon
+			end)
+		elseif part:IsA("Decal") then
+			pcall(function()
+				part.Transparency = 1
 			end)
 		end
 	end
 
 	local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart")
 	if handle and entry.glow then
-		local a0 = Instance.new("Attachment") a0.Position = Vector3.new(0, 0.5, 0) a0.Parent = handle
-		local a1 = Instance.new("Attachment") a1.Position = Vector3.new(0, -0.5, 0) a1.Parent = handle
+		local a0 = handle:FindFirstChild("ZXSkinAtt0") or Instance.new("Attachment")
+		a0.Name = "ZXSkinAtt0"
+		a0.Position = Vector3.new(0, 0.5, 0)
+		a0.Parent = handle
+		local a1 = handle:FindFirstChild("ZXSkinAtt1") or Instance.new("Attachment")
+		a1.Name = "ZXSkinAtt1"
+		a1.Position = Vector3.new(0, -0.5, 0)
+		a1.Parent = handle
 		local tr = Instance.new("Trail")
 		tr.Name = "ZXSkinTrail"
 		tr.Attachment0   = a0
@@ -5812,23 +5833,12 @@ local function executeDirectShot(gunTool)
 	local mRoot = murderer.Character:FindFirstChild("HumanoidRootPart") or murderer.Character:FindFirstChild("UpperTorso")
 	local isWall = root and mRoot and checkWallBetween(root.Position, mRoot.Position, char, murderer.Character)
 
-	local wallShot = false
-	if isWall and root and mRoot and (ZX.wallbang.enabled or wallbangEnabled) then
-		wallShot = true
-		-- FIX: 0.02s bekleyince sunucu hala eski konumu goruyordu, ates duvar
-		-- arkasindan atilmis sayiliyordu. Katilin YANINA iniyoruz (ustune degil,
-		-- tavan icine girmesin) ve sunucu konumu isleyene kadar bekliyoruz.
-		local away = Vector3.new(root.Position.X - mRoot.Position.X, 0, root.Position.Z - mRoot.Position.Z)
-		local side = (away.Magnitude > 0.05) and away.Unit * 3.5 or Vector3.new(0, 0, -3.5)
-		pcall(function()
-			root.CFrame = CFrame.lookAt(
-				mRoot.Position + side + Vector3.new(0, 1, 0),
-				Vector3.new(mRoot.Position.X, mRoot.Position.Y + 1, mRoot.Position.Z)
-			)
-			root.AssemblyLinearVelocity = Vector3.zero
-		end)
-		task.wait(0.14)
-	elseif root then
+	local wallShot = (ZX.wallbang.enabled or wallbangEnabled) and true or false
+	-- ISINLAMA TAMAMEN KALDIRILDI: internetteki standart MM2 wallbang yontemi —
+	-- MM2 CreateBeam sunucusu client'in gonderdigi nisan noktasina guvenir,
+	-- kursun kendi konumumuzdan duvarin icinden gecer. Eski kod bizi katila
+	-- isinliyordu; artik hicbir yere tasınmiyoruz.
+	if root then
 		pcall(function()
 			root.CFrame = CFrame.new(root.Position, Vector3.new(aimPos.X, root.Position.Y, aimPos.Z))
 			root.AssemblyAngularVelocity = Vector3.zero
@@ -5858,13 +5868,6 @@ local function executeDirectShot(gunTool)
 
 	if ZX.tracer.enabled then
 		ZX.createNeonTracer(gunTool, aimPos)
-	end
-
-	if wallShot and root and oldCF then
-		task.wait(0.14)
-		pcall(function()
-			root.CFrame = oldCF
-		end)
 	end
 
 	task.delay(0.12, function()
@@ -6267,7 +6270,7 @@ do
 	-- tekrar oy verilebildigi icin paneli bulup uzerine isinlanir.
 	ZX.mapdupe = {
 		enabled  = false,
-		selected = "Bank 2",
+		selected = nil,
 		delay    = 0.3,
 		notifyMsg = nil,
 		maps     = { "Bank 2", "Biolab", "Factory", "Hospital 3", "Hotel 2", "House 2", "Mansion 2", "MilBase", "Office 3", "Police Station", "Research Facility", "Workplace" },
@@ -6395,6 +6398,136 @@ do
 				end
 			end
 			ZX.mapdupe.enabled = false
+		end)
+	end
+
+	-- DİNAMİK OYLAMA LİSTESİ: oy sırasında ekranda çıkan haritalar taranır,
+	-- seçim bitince liste temizlenir.
+	local mapAliases = {}
+	for _, m in ipairs(ZX.mapdupe.maps) do
+		table.insert(mapAliases, {
+			label = m,
+			norm  = normName(m),
+			base  = normName(m):gsub("%d+$", ""),
+		})
+	end
+
+	ZX.mapdupe.found   = {}
+	ZX.mapdupe.buttons = {}
+	ZX.mapdupe.tab     = nil
+
+	local function scanVoteDisplays()
+		local full, bare = {}, {}
+		local count = 0
+		for _, inst in ipairs(Workspace:GetDescendants()) do
+			count = count + 1
+			if count > 12000 then break end
+			if inst:IsA("TextLabel") or inst:IsA("TextButton") then
+				local t = normName(inst.Text)
+				if t ~= "" then
+					for _, a in ipairs(mapAliases) do
+						if t:find(a.norm, 1, true) then
+							full[a.label] = true
+						elseif a.base ~= "" and t:find(a.base, 1, true) then
+							bare[a.label] = true
+						end
+					end
+				end
+			end
+		end
+		local list = {}
+		for _, a in ipairs(mapAliases) do
+			if full[a.label] or bare[a.label] then
+				table.insert(list, a.label)
+			end
+		end
+		return list
+	end
+	ZX.mapdupe.scanVoteDisplays = scanVoteDisplays
+
+	ZX.mapdupe.refreshUI = function(foundList)
+		local tab = ZX.mapdupe.tab
+		if not tab then return end
+		for _, el in pairs(ZX.mapdupe.buttons or {}) do
+			pcall(function()
+				local frame = el and el.ButtonFrame and el.ButtonFrame.UIElements and el.ButtonFrame.UIElements.Main
+				if frame then
+					frame.Visible = false
+					frame:Destroy()
+				end
+			end)
+		end
+		ZX.mapdupe.buttons = {}
+		for _, label in ipairs(foundList or {}) do
+			local el = tab:Button({
+				Title = label,
+				Desc = "Bu haritayı seç",
+				Callback = function()
+					ZX.mapdupe.selected = label
+					if ZX.winduiNotify then
+						ZX.winduiNotify("Map Duper", label .. " seçildi — Map Dupe Aktif'i açabilirsin")
+					end
+				end,
+			})
+			table.insert(ZX.mapdupe.buttons, el)
+		end
+	end
+
+	task.spawn(function()
+		local lastSig = nil
+		while true do
+			task.wait(2)
+			local ok, foundList = pcall(scanVoteDisplays)
+			if ok and foundList then
+				local sig = table.concat(foundList, "|")
+				if sig ~= lastSig then
+					lastSig = sig
+					ZX.mapdupe.found = foundList
+					ZX.mapdupe.refreshUI(foundList)
+					if #foundList > 0 and ZX.winduiNotify then
+						ZX.winduiNotify("Map Duper", "Oylama açıldı: " .. table.concat(foundList, ", "))
+					end
+				end
+			end
+		end
+	end)
+
+	-- SHOOT MURDERER VE TÜM ATEŞLERDE TRACER: __namecall hook.
+	-- triggerShootMurderer main-chunk local'i, hub'dan baglanamadigi icin
+	-- CreateBeam/Shoot remote cagrilarini yakalayip tracer basiyoruz.
+	if getrawmetatable and setreadonly and getnamecallmethod then
+		pcall(function()
+			local mt = getrawmetatable(game)
+			setreadonly(mt, false)
+			local oldNamecall = mt.__namecall
+			local hookFn = function(self, ...)
+				local method = getnamecallmethod()
+				local args = { ... }
+				if method == "InvokeServer" or method == "FireServer" then
+					pcall(function()
+						if ZX.tracer.enabled and typeof(self) == "Instance"
+							and (self:IsA("RemoteFunction") or self:IsA("RemoteEvent")) then
+							local tool = self:FindFirstAncestorOfClass("Tool")
+							if tool and weaponKind(tool) == "gun" then
+								local target = nil
+								for i = 1, #args do
+									local a = args[i]
+									if typeof(a) == "Vector3" then
+										target = a
+									elseif typeof(a) == "CFrame" then
+										target = a.Position
+									end
+								end
+								if target then ZX.createNeonTracer(tool, target) end
+							end
+						end
+					end)
+				end
+				return oldNamecall(self, ...)
+			end
+			if newcclosure then hookFn = newcclosure(hookFn) end
+			mt.__namecall = hookFn
+			setreadonly(mt, true)
 		end)
 	end
 end
@@ -6875,6 +7008,69 @@ local VisualTab = Window:Tab({
 	Icon = "solar:eye-bold",
 })
 
+local MapDupeTab = Window:Tab({
+	Title = "Map Duper",
+	Icon = "solar:map-bold",
+})
+
+ZX.mapdupe.tab = MapDupeTab
+
+MapDupeTab:Paragraph({
+	Title = "Nasıl Çalışır",
+	Desc = "Oylama açıldığında çıkan haritalar buraya listelenir. Bir haritaya basarak seçersin, sonra Map Dupe Aktif'i açarsın. Oylama bitince liste kaybolur.",
+})
+
+MapDupeTab:Button({
+	Title = "Haritaları Şimdi Tara",
+	Desc = "Oylama ekranını hemen tarar",
+	Callback = function()
+		task.spawn(function()
+			local found = {}
+			if ZX.mapdupe.scanVoteDisplays then found = ZX.mapdupe.scanVoteDisplays() end
+			ZX.mapdupe.found = found
+			ZX.mapdupe.refreshUI(found)
+			if #found > 0 then
+				if ZX.winduiNotify then ZX.winduiNotify("Map Duper", "Bulunan: " .. table.concat(found, ", ")) end
+			else
+				if ZX.winduiNotify then ZX.winduiNotify("Map Duper", "Şu an oylama ekranında harita yok") end
+			end
+		end)
+	end,
+})
+
+MapDupeTab:Toggle({
+	Title = "Map Dupe Aktif",
+	Desc = "Reset çekip seçilen haritanın oy paneline ışınlanarak sürekli oy verir, oylama bitince durur",
+	Value = false,
+	Callback = function(v)
+		if v then
+			ZX.mapdupe.notifyMsg = nil
+			ZX.startMapDupe(true)
+			task.spawn(function()
+				while ZX.mapdupe.enabled do
+					task.wait(0.5)
+				end
+				if ZX.mapdupe.notifyMsg and ZX.winduiNotify then
+					ZX.winduiNotify("Map Dupe", ZX.mapdupe.notifyMsg)
+					ZX.mapdupe.notifyMsg = nil
+				end
+			end)
+		else
+			ZX.mapdupe.enabled = false
+			ZX.mapdupe.notifyMsg = nil
+		end
+	end,
+})
+
+MapDupeTab:Slider({
+	Title = "Dupe Hızı",
+	Step = 50,
+	Value = { Min = 100, Max = 2000, Default = 300 },
+	Callback = function(v)
+		ZX.mapdupe.delay = v / 1000
+	end,
+})
+
 local TracerSection = VisualTab:Section({ Title = "Bullet Tracer" })
 
 TracerSection:Toggle({
@@ -6967,51 +7163,6 @@ MM2WorldSection:Toggle({
 	end,
 })
 
-local MapDupeSection = VisualTab:Section({ Title = "Map Duper" })
-
-MapDupeSection:Dropdown({
-	Title = "Harita Seç",
-	Desc = "Sadece bir harita seçebilirsin",
-	Values = ZX.mapdupe.maps,
-	Value = ZX.mapdupe.selected,
-	Callback = function(sel)
-		ZX.mapdupe.selected = sel
-	end,
-})
-
-MapDupeSection:Toggle({
-	Title = "Map Dupe Aktif",
-	Desc = "Reset çekip seçilen haritanın oy paneline ışınlanarak sürekli oy verir, oylama bitince durur",
-	Value = false,
-	Callback = function(v)
-		if v then
-			ZX.mapdupe.notifyMsg = nil
-			ZX.startMapDupe(true)
-			task.spawn(function()
-				while ZX.mapdupe.enabled do
-					task.wait(0.5)
-				end
-				if ZX.mapdupe.notifyMsg and ZX.winduiNotify then
-					ZX.winduiNotify("Map Dupe", ZX.mapdupe.notifyMsg)
-					ZX.mapdupe.notifyMsg = nil
-				end
-			end)
-		else
-			ZX.mapdupe.enabled = false
-			ZX.mapdupe.notifyMsg = nil
-		end
-	end,
-})
-
-MapDupeSection:Slider({
-	Title = "Dupe Hızı",
-	Step = 50,
-	Value = { Min = 100, Max = 2000, Default = 300 },
-	Callback = function(v)
-		ZX.mapdupe.delay = v / 1000
-	end,
-})
-
 local SkinSection = VisualTab:Section({ Title = "Skin Seçici" })
 
 SkinSection:Toggle({
@@ -7020,12 +7171,20 @@ SkinSection:Toggle({
 	Value = false,
 	Callback = function(v)
 		ZX.skins.enabled = v
-		local char = player.Character
-		if char then
-			for _, t in ipairs(char:GetChildren()) do
-				if t:IsA("Tool") then pcall(ZX.applyWeaponSkin, t) end
+		task.spawn(function()
+			local bp = player:FindFirstChild("Backpack")
+			if bp then
+				for _, t in ipairs(bp:GetChildren()) do
+					if t:IsA("Tool") then pcall(ZX.applyWeaponSkin, t) end
+				end
 			end
-		end
+			local char = player.Character
+			if char then
+				for _, t in ipairs(char:GetChildren()) do
+					if t:IsA("Tool") then pcall(ZX.applyWeaponSkin, t) end
+				end
+			end
+		end)
 	end,
 })
 
@@ -7035,12 +7194,20 @@ SkinSection:Dropdown({
 	Value = "Default",
 	Callback = function(selected)
 		ZX.skins.knife = selected
-		local char = player.Character
-		if char then
-			for _, t in ipairs(char:GetChildren()) do
-				if t:IsA("Tool") and weaponKind(t) == "knife" then pcall(ZX.applyWeaponSkin, t) end
+		task.spawn(function()
+			local bp = player:FindFirstChild("Backpack")
+			if bp then
+				for _, t in ipairs(bp:GetChildren()) do
+					if t:IsA("Tool") and weaponKind(t) == "knife" then pcall(ZX.applyWeaponSkin, t) end
+				end
 			end
-		end
+			local char = player.Character
+			if char then
+				for _, t in ipairs(char:GetChildren()) do
+					if t:IsA("Tool") and weaponKind(t) == "knife" then pcall(ZX.applyWeaponSkin, t) end
+				end
+			end
+		end)
 	end,
 })
 
@@ -7050,12 +7217,20 @@ SkinSection:Dropdown({
 	Value = "Default",
 	Callback = function(selected)
 		ZX.skins.gun = selected
-		local char = player.Character
-		if char then
-			for _, t in ipairs(char:GetChildren()) do
-				if t:IsA("Tool") and weaponKind(t) == "gun" then pcall(ZX.applyWeaponSkin, t) end
+		task.spawn(function()
+			local bp = player:FindFirstChild("Backpack")
+			if bp then
+				for _, t in ipairs(bp:GetChildren()) do
+					if t:IsA("Tool") and weaponKind(t) == "gun" then pcall(ZX.applyWeaponSkin, t) end
+				end
 			end
-		end
+			local char = player.Character
+			if char then
+				for _, t in ipairs(char:GetChildren()) do
+					if t:IsA("Tool") and weaponKind(t) == "gun" then pcall(ZX.applyWeaponSkin, t) end
+				end
+			end
+		end)
 	end,
 })
 
