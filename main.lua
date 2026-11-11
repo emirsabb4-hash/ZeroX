@@ -5768,7 +5768,7 @@ if showToast then
 end
 
 -- =========================================================================
--- ZEROX v1.0.1 — CATALOG / VISUAL / COMBAT EXTENSION
+-- ZeroX v1.0.1 — CATALOG / VISUAL / COMBAT EXTENSION
 -- WindUI temasından uyarlanmış koyu palet + katalog sekmeleri
 -- =========================================================================
 local ZX = {
@@ -7050,5 +7050,3 @@ end)()
 end)()
 
 ZX.applyTheme()
-
-
