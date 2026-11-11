@@ -5323,23 +5323,24 @@ if showToast then
 end
 
 -- =========================================================================
--- ZeroX v1.0.1 — WINDUI COMPLETE CATALOG EXTENSION
+-- ZeroX v1.0.1 — WINDUI COMPLETE ZEROX HUB
 -- Full WindUI Library Integration (Footagesus/WindUI)
 -- =========================================================================
 local ZX = {
-	tracer = { enabled = false, duration = 1.0, color = Color3.fromRGB(0, 255, 140), thickness = 1.8 },
+	tracer = { enabled = false, duration = 1.0, color = Color3.fromRGB(0, 255, 140), thickness = 3 },
 	skins = { knife = "Default", gun = "Default" },
 	orig = {},
+	origGrip = {},
 	spin = { enabled = false, speed = 380, angle = 0 },
-	timer = { enabled = false, start = 0 },
+	timer = { enabled = false },
 	box = { coin = false, gun = false },
-	farm = { enabled = false, savedCF = nil, saved = {}, prevWB = false, hide = true },
+	farm = { enabled = false, savedCF = nil, saved = {}, prevWB = false, hide = true, delay = 0.08 },
 	wallbang = { enabled = false },
 	hooked = {},
 }
 
 -- ---------------------------------------------------------------
--- 1) ESKİ OBSIDIAN MENÜSÜNÜ GİZLEME
+-- 1) ESKİ OBSIDIAN ARAYÜZÜNÜ GİZLEME
 -- ---------------------------------------------------------------
 pcall(function()
 	if menuGui then
@@ -5357,7 +5358,7 @@ pcall(function()
 end)
 
 -- ---------------------------------------------------------------
--- 2) KOSTÜM LİSTELERİ (DEFAULT EN ÜSTTE)
+-- 2) KOSTÜM VERİTABANI (DEFAULT EN ÜSTTE)
 -- ---------------------------------------------------------------
 local function C(r, g, b) return Color3.fromRGB(r, g, b) end
 
@@ -5371,17 +5372,13 @@ ZX.knifeSkins = {
 	{ name = "Icewing", color = C(150, 220, 255), mat = Enum.Material.Ice, glow = true },
 	{ name = "Icebreaker", color = C(120, 200, 255), mat = Enum.Material.Ice, glow = true },
 	{ name = "Frostbite", color = C(90, 180, 255), mat = Enum.Material.Neon, glow = true },
-	{ name = "Spider", color = C(80, 80, 90), mat = Enum.Material.Metal },
 	{ name = "Batwing", color = C(70, 40, 110), mat = Enum.Material.Neon },
 	{ name = "Nightstar", color = C(60, 60, 180), mat = Enum.Material.Neon, glow = true },
 	{ name = "Ghostblade", color = C(200, 255, 255), mat = Enum.Material.ForceField, glow = true },
 	{ name = "Radiance", color = C(255, 220, 80), mat = Enum.Material.Neon, glow = true },
 	{ name = "Prismatic", color = C(255, 100, 200), mat = Enum.Material.Neon, glow = true },
-	{ name = "Asteria", color = C(180, 120, 255), mat = Enum.Material.Neon, glow = true },
-	{ name = "Blossom", color = C(255, 150, 200), mat = Enum.Material.Neon },
 	{ name = "Corrupt", color = C(90, 255, 60), mat = Enum.Material.Neon, glow = true },
 	{ name = "Darkbringer", color = C(120, 0, 160), mat = Enum.Material.Neon, glow = true },
-	{ name = "Fang", color = C(230, 230, 230), mat = Enum.Material.Metal },
 	{ name = "Flames", color = C(255, 90, 0), mat = Enum.Material.Neon, glow = true },
 	{ name = "Heat", color = C(255, 50, 0), mat = Enum.Material.Neon },
 	{ name = "Laser", color = C(255, 0, 60), mat = Enum.Material.Neon, glow = true },
@@ -5389,17 +5386,9 @@ ZX.knifeSkins = {
 	{ name = "Blaster", color = C(180, 200, 255), mat = Enum.Material.Neon },
 	{ name = "Mint", color = C(120, 255, 200), mat = Enum.Material.Neon },
 	{ name = "Pixel", color = C(255, 60, 60), mat = Enum.Material.SmoothPlastic },
-	{ name = "Prince of Stars", color = C(120, 160, 255), mat = Enum.Material.Neon, glow = true },
-	{ name = "Radiant", color = C(255, 255, 180), mat = Enum.Material.Neon, glow = true },
-	{ name = "Red Seer", color = C(255, 40, 40), mat = Enum.Material.Neon },
 	{ name = "Seer", color = C(255, 120, 120), mat = Enum.Material.Neon },
-	{ name = "Snowflake", color = C(200, 240, 255), mat = Enum.Material.Ice, glow = true },
 	{ name = "Tides", color = C(0, 160, 255), mat = Enum.Material.Neon },
-	{ name = "Viper", color = C(60, 255, 60), mat = Enum.Material.Neon },
-	{ name = "Xeno", color = C(160, 255, 120), mat = Enum.Material.Neon, glow = true },
 	{ name = "Candy", color = C(255, 120, 180), mat = Enum.Material.Neon },
-	{ name = "Gingerblade", color = C(200, 100, 40), mat = Enum.Material.Wood },
-	{ name = "Jingle", color = C(220, 40, 40), mat = Enum.Material.Neon },
 }
 
 ZX.gunSkins = {
@@ -5413,21 +5402,12 @@ ZX.gunSkins = {
 	{ name = "Luger", color = C(200, 200, 210), mat = Enum.Material.Metal },
 	{ name = "Mint", color = C(120, 255, 200), mat = Enum.Material.Neon },
 	{ name = "Pixel", color = C(255, 60, 60), mat = Enum.Material.SmoothPlastic },
-	{ name = "Predator", color = C(40, 120, 80), mat = Enum.Material.Metal },
-	{ name = "Reptile", color = C(60, 180, 90), mat = Enum.Material.Neon },
-	{ name = "Shark", color = C(80, 140, 200), mat = Enum.Material.Metal },
 	{ name = "Ghost", color = C(220, 255, 255), mat = Enum.Material.ForceField, glow = true },
 	{ name = "Golden", color = C(255, 210, 60), mat = Enum.Material.Neon, glow = true },
-	{ name = "Frostbite", color = C(90, 180, 255), mat = Enum.Material.Neon, glow = true },
 	{ name = "Iceblaster", color = C(120, 200, 255), mat = Enum.Material.Ice, glow = true },
 	{ name = "Nightfire", color = C(120, 40, 200), mat = Enum.Material.Neon },
-	{ name = "Phantom", color = C(160, 160, 200), mat = Enum.Material.ForceField },
-	{ name = "Radiant", color = C(255, 255, 180), mat = Enum.Material.Neon, glow = true },
-	{ name = "Spider", color = C(80, 80, 90), mat = Enum.Material.Metal },
-	{ name = "Xeno", color = C(160, 255, 120), mat = Enum.Material.Neon, glow = true },
 	{ name = "Corrupt", color = C(90, 255, 60), mat = Enum.Material.Neon, glow = true },
 	{ name = "Candy", color = C(255, 120, 180), mat = Enum.Material.Neon },
-	{ name = "Jingle", color = C(220, 40, 40), mat = Enum.Material.Neon },
 }
 
 local knifeNames = {}
@@ -5436,15 +5416,6 @@ for _, s in ipairs(ZX.knifeSkins) do table.insert(knifeNames, s.name) end
 local gunNames = {}
 for _, s in ipairs(ZX.gunSkins) do table.insert(gunNames, s.name) end
 
--- ---------------------------------------------------------------
--- 3) SİLAH & KOSTÜM YÖNETİCİSİ
--- ---------------------------------------------------------------
-local function findHandle(tool)
-	local h = tool:FindFirstChild("Handle")
-	if h and h:IsA("BasePart") then return h end
-	return tool:FindFirstChildWhichIsA("BasePart", true)
-end
-
 local function weaponKind(tool)
 	if not tool or not tool:IsA("Tool") then return nil end
 	local n = tool.Name:lower()
@@ -5452,28 +5423,12 @@ local function weaponKind(tool)
 	if n:find("gun") or n:find("revolver") or n:find("sheriff") then return "gun" end
 	return nil
 end
-
 ZX.weaponKind = weaponKind
 
 ZX.applyWeaponSkin = function(tool)
 	local kind = weaponKind(tool)
 	if not kind then return end
-	local handle = findHandle(tool)
-	if not handle then return end
 
-	if not ZX.orig[tool] then
-		local mesh = handle:FindFirstChildOfClass("SpecialMesh")
-		ZX.orig[tool] = {
-			color = handle.Color,
-			material = handle.Material,
-			size = handle.Size,
-			meshId = mesh and mesh.MeshId or nil,
-			textureId = mesh and mesh.TextureId or nil,
-			meshScale = mesh and mesh.Scale or nil,
-		}
-	end
-
-	local o = ZX.orig[tool]
 	local list = (kind == "knife") and ZX.knifeSkins or ZX.gunSkins
 	local sel = (kind == "knife") and ZX.skins.knife or ZX.skins.gun
 
@@ -5482,54 +5437,64 @@ ZX.applyWeaponSkin = function(tool)
 		if e.name == sel then entry = e break end
 	end
 
-	local mesh = handle:FindFirstChildOfClass("SpecialMesh")
-	local oldTrail = handle:FindFirstChild("ZXSkinTrail")
+	if not ZX.orig[tool] then
+		ZX.orig[tool] = {}
+		for _, part in ipairs(tool:GetDescendants()) do
+			if part:IsA("BasePart") then
+				ZX.orig[tool][part] = {
+					color = part.Color,
+					material = part.Material,
+					transparency = part.Transparency,
+				}
+			end
+		end
+	end
+
+	local oldTrail = tool:FindFirstChild("ZXSkinTrail", true)
+	if oldTrail then oldTrail:Destroy() end
 
 	if entry.color == nil then
-		handle.Color = o.color
-		handle.Material = o.material
-		handle.Size = o.size
-		if mesh then
-			if o.meshId then mesh.MeshId = o.meshId end
-			if o.textureId then mesh.TextureId = o.textureId end
-			if o.meshScale then mesh.Scale = o.meshScale end
+		for part, info in pairs(ZX.orig[tool] or {}) do
+			if part and part.Parent then
+				pcall(function()
+					part.Color = info.color
+					part.Material = info.material
+					part.Transparency = info.transparency
+				end)
+			end
 		end
-		if oldTrail then oldTrail:Destroy() end
 		return
 	end
 
-	handle.Color = entry.color
-	handle.Material = entry.mat or Enum.Material.Neon
-	if mesh and o.meshScale then
-		mesh.Scale = o.meshScale * (entry.scale or 1)
+	for _, part in ipairs(tool:GetDescendants()) do
+		if part:IsA("BasePart") then
+			pcall(function()
+				part.Color = entry.color
+				part.Material = entry.mat or Enum.Material.Neon
+			end)
+		end
 	end
 
-	if oldTrail then oldTrail:Destroy() end
-	if entry.glow then
-		local a0 = Instance.new("Attachment")
-		a0.Position = Vector3.new(0, 0.45, 0)
-		a0.Parent = handle
-		local a1 = Instance.new("Attachment")
-		a1.Position = Vector3.new(0, -0.45, 0)
-		a1.Parent = handle
+	local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart")
+	if handle and entry.glow then
+		local a0 = Instance.new("Attachment") a0.Position = Vector3.new(0, 0.5, 0) a0.Parent = handle
+		local a1 = Instance.new("Attachment") a1.Position = Vector3.new(0, -0.5, 0) a1.Parent = handle
 		local tr = Instance.new("Trail")
 		tr.Name = "ZXSkinTrail"
 		tr.Attachment0 = a0
 		tr.Attachment1 = a1
 		tr.Color = ColorSequence.new(entry.color)
-		tr.Transparency = NumberSequence.new(0.4)
-		tr.Lifetime = 0.22
+		tr.Transparency = NumberSequence.new(0.3)
+		tr.Lifetime = 0.2
 		tr.LightEmission = 1
 		tr.Parent = handle
 	end
 end
 
 -- ---------------------------------------------------------------
--- 4) BULLET TRACER (NEON ÇİZGİ — DUVARDA DURUR, GEÇMEZ)
+-- 3) BULLET TRACER (GERÇEK 3D NEON BLOOM + DUVARDA DURMA)
 -- ---------------------------------------------------------------
 ;(function()
-	local DrawingLib = rawget(_G, "Drawing")
-
 	local function screenRay()
 		local cam = Workspace.CurrentCamera
 		if not cam then return nil end
@@ -5544,231 +5509,156 @@ end
 		return cam:ScreenPointToRay(x, y)
 	end
 
-	local function spawnDrawingLine(fromPos, toPos, color, thickness, dur)
-		local ok, line = pcall(function() return DrawingLib.new("Line") end)
-		if not ok or not line then return false end
-		line.Thickness = thickness
-		line.Color = color
-		line.Transparency = 0.05
-		task.spawn(function()
-			local t0 = os.clock()
-			while true do
-				local cam = Workspace.CurrentCamera
-				if not cam then break end
-				local a, onA = cam:WorldToViewportPoint(fromPos)
-				local b, onB = cam:WorldToViewportPoint(toPos)
-				if onA and onB and a.Z > 0 and b.Z > 0 then
-					line.Visible = true
-					line.From = Vector2.new(a.X, a.Y)
-					line.To = Vector2.new(b.X, b.Y)
-				else
-					line.Visible = false
-				end
-				local p = (os.clock() - t0) / dur
-				if p >= 1 then break end
-				line.Transparency = math.clamp(p, 0, 1)
-				task.wait()
-			end
-			pcall(function() line:Remove() end)
-		end)
-		return true
-	end
-
-	local function spawnFrameLine(fromPos, toPos, color, thickness, dur)
-		local cam = Workspace.CurrentCamera
-		if not cam then return end
-		local line = Instance.new("Frame")
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.BorderSizePixel = 0
-		line.BackgroundColor3 = color
-		line.BackgroundTransparency = 0.05
-		line.ZIndex = 99999
-		line.Parent = (espDrawingGui or menuGui)
-
-		task.spawn(function()
-			local t0 = os.clock()
-			while true do
-				local c = Workspace.CurrentCamera
-				if not c then break end
-				local a, onA = c:WorldToViewportPoint(fromPos)
-				local b, onB = c:WorldToViewportPoint(toPos)
-				local p = (os.clock() - t0) / dur
-				if onA and onB and a.Z > 0 and b.Z > 0 then
-					local ax, ay = a.X, a.Y
-					local bx, by = b.X, b.Y
-					local dist = math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay))
-					line.Visible = true
-					line.Size = UDim2.new(0, dist, 0, thickness)
-					line.Position = UDim2.new(0, (ax + bx) / 2, 0, (ay + by) / 2)
-					line.Rotation = math.deg(math.atan2(by - ay, bx - ax))
-				else
-					line.Visible = false
-				end
-				if p >= 1 then break end
-				line.BackgroundTransparency = math.clamp(p, 0, 1)
-				RunService.RenderStepped:Wait()
-			end
-			line:Destroy()
-		end)
-	end
-
-	ZX.spawnLine = function(fromPos, toPos, color, thickness, dur)
-		if DrawingLib and DrawingLib.new then
-			if spawnDrawingLine(fromPos, toPos, color, thickness, dur) then return end
-		end
-		spawnFrameLine(fromPos, toPos, color, thickness, dur)
-	end
-
 	ZX.trace = function()
 		if not ZX.tracer.enabled then return end
 		local ray = screenRay()
 		if not ray then return end
 		local char = player.Character
 		if not char then return end
-		local root = char:FindFirstChild("HumanoidRootPart")
 		local tool = char:FindFirstChildOfClass("Tool")
 		local handle = tool and (tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart", true))
-		local origin = handle and (handle.Position + ray.Direction * 0.8) or (root and root.Position or ray.Origin)
+		local origin = handle and handle.Position or (char:FindFirstChild("HumanoidRootPart") and char.HumanoidRootPart.Position or ray.Origin)
 
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = { char }
 		params.IgnoreWater = true
 
-		local result = Workspace:Raycast(ray.Origin, ray.Direction * 1200, params)
-		local target = result and result.Position or (ray.Origin + ray.Direction * 1200)
-		ZX.spawnLine(origin, target, ZX.tracer.color, ZX.tracer.thickness, ZX.tracer.duration)
+		local hit = Workspace:Raycast(ray.Origin, ray.Direction * 1500, params)
+		local targetPos = hit and hit.Position or (ray.Origin + ray.Direction * 1500)
+		local dist = (targetPos - origin).Magnitude
+
+		-- Gerçek 3D Neon Parça (Roblox Bloom Glowing Neon)
+		local neonBeam = Instance.new("Part")
+		neonBeam.Name = "ZXNeonTracer"
+		neonBeam.Material = Enum.Material.Neon
+		neonBeam.Color = ZX.tracer.color
+		neonBeam.CastShadow = false
+		neonBeam.Anchored = true
+		neonBeam.CanCollide = false
+		neonBeam.CanQuery = false
+		neonBeam.CanTouch = false
+		local thick = math.clamp(ZX.tracer.thickness * 0.05, 0.05, 0.6)
+		neonBeam.Size = Vector3.new(thick, thick, dist)
+		neonBeam.CFrame = CFrame.new(origin:Lerp(targetPos, 0.5), targetPos)
+		neonBeam.Parent = Workspace
+
+		task.spawn(function()
+			local t0 = tick()
+			local dur = math.max(0.1, ZX.tracer.duration)
+			while true do
+				local elapsed = tick() - t0
+				if elapsed >= dur then break end
+				neonBeam.Transparency = elapsed / dur
+				RunService.RenderStepped:Wait()
+			end
+			neonBeam:Destroy()
+		end)
 	end
 end)()
 
 -- ---------------------------------------------------------------
--- 5) SPIN ITEMS (SİLAH AŞAĞI 380°, KILIÇ SOLA DÖNÜŞ)
+-- 4) SPIN ITEMS & NAMLU DUMANI
 -- ---------------------------------------------------------------
 ;(function()
-	local grip = nil
-	local baseC0 = nil
-	local gripTool = nil
-
-	local function resetGrip()
-		if grip and baseC0 then
-			pcall(function() grip.C0 = baseC0 end)
-		end
-		grip = nil
-		baseC0 = nil
-		gripTool = nil
-	end
-
-	local function findGrip(tool)
+	local function findRightGrip()
 		local char = player.Character
 		if not char then return nil end
-		local handle = tool:FindFirstChild("Handle")
-		local g = handle and handle:FindFirstChild("RightGrip")
+		local tool = char:FindFirstChildOfClass("Tool")
+		if not tool then return nil end
+		local h = tool:FindFirstChild("Handle")
+		local g = h and h:FindFirstChild("RightGrip")
 		if not g then
-			local arm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
+			local arm = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
 			if arm then g = arm:FindFirstChild("RightGrip") end
 		end
-		return g
+		return g, tool
 	end
 
 	RunService.RenderStepped:Connect(function(dt)
-		if not ZX.spin.enabled then
-			if grip then resetGrip() end
-			return
-		end
-		local char = player.Character
-		local tool = char and char:FindFirstChildOfClass("Tool")
-		if not tool then
-			resetGrip()
-			return
-		end
+		if not ZX.spin.enabled then return end
+		local grip, tool = findRightGrip()
+		if not grip or not tool then return end
 		local kind = ZX.weaponKind and ZX.weaponKind(tool) or nil
-		if not kind then
-			resetGrip()
-			return
+		if not kind then return end
+
+		if not ZX.origGrip[grip] then
+			ZX.origGrip[grip] = grip.C1
 		end
-		if gripTool ~= tool then
-			resetGrip()
-			local g = findGrip(tool)
-			if not g then return end
-			grip = g
-			baseC0 = g.C0
-			gripTool = tool
-			ZX.spin.angle = 0
-		end
-		if not grip or not grip.Parent then return end
+		local baseC1 = ZX.origGrip[grip]
 
 		ZX.spin.angle = (ZX.spin.angle + ZX.spin.speed * dt) % 360
 		local rad = math.rad(ZX.spin.angle)
+
+		-- Silah aşağı 380° durmayan döngü; kılıç sola döner
 		if kind == "gun" then
-			grip.C0 = baseC0 * CFrame.Angles(rad, 0, 0)
+			grip.C1 = baseC1 * CFrame.Angles(rad, 0, 0)
 		else
-			grip.C0 = baseC0 * CFrame.Angles(0, -rad, 0)
+			grip.C1 = baseC1 * CFrame.Angles(0, -rad, 0)
 		end
 	end)
 
-	-- KAPANMAYAN NAMLU DUMANI
-	ZX.ensureSmoke = function(tool)
-		local kind = ZX.weaponKind and ZX.weaponKind(tool) or nil
-		if kind ~= "gun" then return end
+	-- Kapanmayan Namlu Dumanı
+	ZX.emitMuzzleSmoke = function(tool)
 		local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart", true)
 		if not handle then return end
-		if handle:FindFirstChild("ZXMuzzle") then return end
 
-		local att = Instance.new("Attachment")
-		att.Name = "ZXMuzzle"
-		att.Position = Vector3.new(0, 0, -1.1)
-		att.Parent = handle
+		local att = handle:FindFirstChild("ZXMuzzleAtt")
+		if not att then
+			att = Instance.new("Attachment")
+			att.Name = "ZXMuzzleAtt"
+			att.Position = Vector3.new(0, 0, -1.2)
+			att.Parent = handle
 
-		local pe = Instance.new("ParticleEmitter")
-		pe.Texture = "rbxasset://textures/particles/smoke_main.dds"
-		pe.Rate = 0
-		pe.Lifetime = NumberRange.new(0.7, 1.3)
-		pe.Speed = NumberRange.new(1.2, 2.4)
-		pe.SpreadAngle = Vector2.new(14, 14)
-		pe.Acceleration = Vector3.new(0, 3.2, 0)
-		pe.Drag = 2.5
-		pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 1.6) })
-		pe.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.25), NumberSequenceKeypoint.new(1, 1) })
-		pe.Color = ColorSequence.new(Color3.fromRGB(200, 200, 200))
-		pe.LightEmission = 0.2
-		pe.LightInfluence = 0.6
-		pe.Rotation = NumberRange.new(0, 360)
-		pe.RotSpeed = NumberRange.new(-40, 40)
-		pe.Enabled = true
-		pe.Parent = att
-	end
+			local pe = Instance.new("ParticleEmitter")
+			pe.Name = "SmokeFX"
+			pe.Texture = "rbxasset://textures/particles/smoke_main.dds"
+			pe.Rate = 0
+			pe.Lifetime = NumberRange.new(0.8, 1.4)
+			pe.Speed = NumberRange.new(1.2, 2.5)
+			pe.SpreadAngle = Vector2.new(15, 15)
+			pe.Acceleration = Vector3.new(0, 3.5, 0)
+			pe.Drag = 2.5
+			pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1.8) })
+			pe.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+			pe.Color = ColorSequence.new(Color3.fromRGB(220, 220, 220))
+			pe.LightEmission = 0.1
+			pe.LightInfluence = 0.5
+			pe.Rotation = NumberRange.new(0, 360)
+			pe.RotSpeed = NumberRange.new(-45, 45)
+			pe.Parent = att
+		end
 
-	ZX.emitSmoke = function(tool)
-		local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart", true)
-		local att = handle and handle:FindFirstChild("ZXMuzzle")
-		local pe = att and att:FindFirstChildOfClass("ParticleEmitter")
-		if pe then pe:Emit(7) end
+		local pe = att:FindFirstChild("SmokeFX")
+		if pe then pe:Emit(8) end
 	end
 end)()
 
 -- ---------------------------------------------------------------
--- 6) ATEŞ ALGILAMA — TRACER + SMOKE + WALLBANG
+-- 5) ATEŞ ALGILAMA — TRACER + SMOKE + WALLBANG
 -- ---------------------------------------------------------------
 ;(function()
-	local function onShot(tool)
+	local function onGunShot(tool)
 		local kind = ZX.weaponKind and ZX.weaponKind(tool) or nil
 		if kind ~= "gun" then return end
 
 		if ZX.tracer.enabled then pcall(ZX.trace) end
-		pcall(ZX.emitSmoke, tool)
+		pcall(ZX.emitMuzzleSmoke, tool)
 
+		-- WALLBANG: Nişan katile doğruysa duvara sıksak bile katile gider
 		if ZX.wallbang.enabled then
 			local murderer = getMurdererPlayer()
+			local mChar = murderer and murderer.Character
 			local cam = Workspace.CurrentCamera
-			if murderer and murderer.Character and cam then
-				local t = murderer.Character:FindFirstChild("UpperTorso")
-					or murderer.Character:FindFirstChild("Torso")
-					or murderer.Character:FindFirstChild("HumanoidRootPart")
-				if t then
-					local dir = t.Position - cam.CFrame.Position
-					if dir.Magnitude > 0.01 and cam.CFrame.LookVector:Dot(dir.Unit) > 0.86 then
+			if mChar and cam then
+				local torso = mChar:FindFirstChild("UpperTorso") or mChar:FindFirstChild("Torso") or mChar:FindFirstChild("HumanoidRootPart")
+				if torso then
+					local dir = torso.Position - cam.CFrame.Position
+					if dir.Magnitude > 1 and cam.CFrame.LookVector:Dot(dir.Unit) > 0.72 then
 						wallbangEnabled = true
-						if not isShooting then task.spawn(triggerShootMurderer) end
+						if not isShooting then
+							task.spawn(triggerShootMurderer)
+						end
 					end
 				end
 			end
@@ -5779,21 +5669,22 @@ end)()
 		if not tool or not tool:IsA("Tool") then return end
 		if ZX.hooked[tool] then return end
 		ZX.hooked[tool] = true
+
 		pcall(ZX.applyWeaponSkin, tool)
-		pcall(ZX.ensureSmoke, tool)
+
 		tool.Activated:Connect(function()
-			if ZX.applyWeaponSkin then pcall(ZX.applyWeaponSkin, tool) end
-			onShot(tool)
+			pcall(ZX.applyWeaponSkin, tool)
+			onGunShot(tool)
 		end)
 		tool.Equipped:Connect(function()
-			if ZX.applyWeaponSkin then pcall(ZX.applyWeaponSkin, tool) end
-			if ZX.ensureSmoke then pcall(ZX.ensureSmoke, tool) end
+			pcall(ZX.applyWeaponSkin, tool)
 		end)
-		tool.AncestryChanged:Connect(function()
-			if not tool:IsDescendantOf(game) then ZX.hooked[tool] = nil end
+		tool.Unequipped:Connect(function()
+			for grip, baseC1 in pairs(ZX.origGrip) do
+				if grip and grip.Parent then pcall(function() grip.C1 = baseC1 end) end
+			end
 		end)
 	end
-	ZX.hookTool = hookTool
 
 	task.spawn(function()
 		while true do
@@ -5809,13 +5700,13 @@ end)()
 					if t:IsA("Tool") then hookTool(t) end
 				end
 			end
-			task.wait(0.8)
+			task.wait(0.7)
 		end
 	end)
 end)()
 
 -- ---------------------------------------------------------------
--- 7) KUTU ESP (COIN & DROPPED GUN)
+-- 6) DROPPED GUN & COIN KUTU ESP
 -- ---------------------------------------------------------------
 ;(function()
 	local entries = {}
@@ -5829,19 +5720,18 @@ end)()
 	end
 
 	local function addBox(part, color, text)
-		if not part or not part.Parent then return end
-		if entries[part] then return end
+		if not part or not part.Parent or entries[part] then return end
 		local box = Instance.new("SelectionBox")
 		box.Adornee = part
 		box.Color3 = color
-		box.LineThickness = 0.06
+		box.LineThickness = 0.07
 		box.SurfaceTransparency = 1
-		box.Transparency = 0.15
+		box.Transparency = 0.1
 		box.Parent = (espDrawingGui or menuGui)
 
 		local bb = Instance.new("BillboardGui")
-		bb.Size = UDim2.new(0, 120, 0, 18)
-		bb.StudsOffset = Vector3.new(0, 1.6, 0)
+		bb.Size = UDim2.new(0, 130, 0, 20)
+		bb.StudsOffset = Vector3.new(0, 1.8, 0)
 		bb.AlwaysOnTop = true
 		bb.Adornee = part
 		bb.Parent = (espDrawingGui or menuGui)
@@ -5850,120 +5740,108 @@ end)()
 		lbl.Size = UDim2.new(1, 0, 1, 0)
 		lbl.BackgroundTransparency = 1
 		lbl.Font = Enum.Font.GothamBold
-		lbl.TextSize = 11
+		lbl.TextSize = 12
 		lbl.TextColor3 = color
-		lbl.TextStrokeTransparency = 0.35
+		lbl.TextStrokeTransparency = 0.2
+		lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 		lbl.Text = text
 		lbl.Parent = bb
 
 		entries[part] = { box = box, bb = bb }
 	end
 
-	local function refresh()
-		if not (ZX.box.coin or ZX.box.gun) then
-			clearAll()
-			return
-		end
-		local seen = {}
-		for _, d in ipairs(Workspace:GetDescendants()) do
-			if d:IsA("BasePart") then
-				local n = d.Name:lower()
-				if ZX.box.coin and n:find("coin") then
-					addBox(d, Color3.fromRGB(255, 215, 0), "COIN")
-					seen[d] = true
-				elseif ZX.box.gun and (n == "gundrop" or n:find("gundrop")) then
-					addBox(d, Color3.fromRGB(255, 230, 0), "Dropped Gun")
-					seen[d] = true
-				end
-			end
-		end
-		for part, e in pairs(entries) do
-			if not seen[part] or not part.Parent then
-				pcall(function() e.box:Destroy() end)
-				pcall(function() e.bb:Destroy() end)
-				entries[part] = nil
-			end
-		end
-	end
-
 	task.spawn(function()
 		while true do
-			pcall(refresh)
-			task.wait(0.9)
+			if not (ZX.box.coin or ZX.box.gun) then
+				clearAll()
+			else
+				local seen = {}
+				for _, d in ipairs(Workspace:GetDescendants()) do
+					if d:IsA("BasePart") then
+						local n = d.Name:lower()
+						if ZX.box.gun and (n == "gundrop" or n:find("gundrop")) then
+							addBox(d, Color3.fromRGB(255, 235, 0), "DROPPED GUN")
+							seen[d] = true
+						elseif ZX.box.coin and n:find("coin") then
+							addBox(d, Color3.fromRGB(255, 215, 0), "COIN")
+							seen[d] = true
+						end
+					end
+				end
+				for part, e in pairs(entries) do
+					if not seen[part] or not part.Parent then
+						pcall(function() e.box:Destroy() end)
+						pcall(function() e.bb:Destroy() end)
+						entries[part] = nil
+					end
+				end
+			end
+			task.wait(0.8)
 		end
 	end)
 end)()
 
 -- ---------------------------------------------------------------
--- 8) GAME TIMER
+-- 7) GAME TIMER (MM2 GERÇEK KALAN SÜRE VEYA LOBBY)
 -- ---------------------------------------------------------------
 ;(function()
 	local label = Instance.new("TextLabel")
 	label.Name = "ZXGameTimer"
 	label.Size = UDim2.new(0, 160, 0, 30)
-	label.Position = UDim2.new(0.5, -80, 0, 54)
-	label.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-	label.BackgroundTransparency = 0.25
+	label.Position = UDim2.new(0.5, -80, 0, 52)
+	label.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+	label.BackgroundTransparency = 0.2
 	label.BorderSizePixel = 0
 	label.Font = Enum.Font.GothamBold
-	label.TextSize = 14
-	label.TextColor3 = Color3.fromRGB(245, 245, 245)
+	label.TextSize = 13
+	label.TextColor3 = Color3.fromRGB(240, 240, 240)
 	label.Text = "LOBBY"
 	label.Visible = false
 	label.ZIndex = 99999
 	label.Parent = (menuGui or game:GetService("CoreGui"))
 
-	local lCorner = Instance.new("UICorner")
-	lCorner.CornerRadius = UDim.new(0, 6)
-	lCorner.Parent = label
+	local lCorner = Instance.new("UICorner") lCorner.CornerRadius = UDim.new(0, 6) lCorner.Parent = label
+	local lStroke = Instance.new("UIStroke") lStroke.Color = Color3.fromRGB(36, 36, 36) lStroke.Thickness = 1 lStroke.Parent = label
 
-	local lStroke = Instance.new("UIStroke")
-	lStroke.Color = Color3.fromRGB(40, 40, 40)
-	lStroke.Thickness = 1
-	lStroke.Parent = label
-
-	local function inRound()
-		local char = player.Character
-		if char then
-			local t = char:FindFirstChildOfClass("Tool")
-			if t then return true end
-		end
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= player and p.Character then
-				local t = p.Character:FindFirstChildOfClass("Tool")
-				if t then
-					local n = t.Name:lower()
-					if n:find("knife") or n:find("gun") or n:find("revolver") or n:find("sheriff") then
-						return true
-					end
+	local function getMM2RemainingTime()
+		local pgui = player:FindFirstChild("PlayerGui")
+		if pgui then
+			local mainGui = pgui:FindFirstChild("MainGUI") or pgui:FindFirstChild("ScreenGui")
+			if mainGui then
+				local timerLbl = mainGui:FindFirstChild("Timer", true) or mainGui:FindFirstChild("Time", true)
+				if timerLbl and timerLbl:IsA("TextLabel") and timerLbl.Visible and timerLbl.Text ~= "" and timerLbl.Text ~= "00:00" then
+					return timerLbl.Text
+				end
+			end
+			for _, desc in ipairs(pgui:GetDescendants()) do
+				if desc:IsA("TextLabel") and desc.Visible and desc.Text:match("^%d+:%d%d$") and desc.Text ~= "00:00" then
+					return desc.Text
 				end
 			end
 		end
-		return false
+		return nil
 	end
 
 	task.spawn(function()
 		while true do
 			label.Visible = ZX.timer.enabled
 			if ZX.timer.enabled then
-				if inRound() then
-					if ZX.timer.start == 0 then ZX.timer.start = tick() end
-					local elapsed = math.max(0, math.floor(tick() - ZX.timer.start))
-					label.Text = string.format("%02d:%02d", math.floor(elapsed / 60), elapsed % 60)
-					label.TextColor3 = Color3.fromRGB(120, 255, 160)
+				local matchTime = getMM2RemainingTime()
+				if matchTime then
+					label.Text = matchTime
+					label.TextColor3 = Color3.fromRGB(0, 255, 140)
 				else
-					ZX.timer.start = 0
 					label.Text = "LOBBY"
-					label.TextColor3 = Color3.fromRGB(200, 200, 200)
+					label.TextColor3 = Color3.fromRGB(190, 190, 190)
 				end
 			end
-			task.wait(0.25)
+			task.wait(0.3)
 		end
 	end)
 end)()
 
 -- ---------------------------------------------------------------
--- 9) AUTO FARM (UNDERGROUND + INVISIBLE + COIN TOPLAMA)
+-- 8) AUTO FARM (UNDERGROUND + INVISIBLE + COIN TOPLAMA)
 -- ---------------------------------------------------------------
 ;(function()
 	local coins = {}
@@ -6006,8 +5884,6 @@ end)()
 			ZX.farm.savedCF = root and root.CFrame or nil
 			ZX.farm.prevWB = wallbangEnabled
 			wallbangEnabled = true
-			ZX.box.coin = true
-			ZX.box.gun = true
 			if ZX.farm.hide then setInvisible(true) end
 
 			task.spawn(function()
@@ -6020,7 +5896,7 @@ end)()
 						if ZX.farm.hide then setInvisible(true) end
 						r.AssemblyLinearVelocity = Vector3.zero
 
-						if tick() - lastScan > 1.1 then
+						if tick() - lastScan > 1.2 then
 							refreshCoins()
 							lastScan = tick()
 						end
@@ -6043,12 +5919,12 @@ end)()
 									firetouchinterest(best, r, 1)
 								end
 							end)
-							r.CFrame = CFrame.new(best.Position + Vector3.new(0, 1.2, 0))
+							r.CFrame = CFrame.new(best.Position + Vector3.new(0, 0.5, 0))
 						else
 							r.CFrame = r.CFrame - Vector3.new(0, 9, 0)
 						end
 					end
-					task.wait(0.09)
+					task.wait(ZX.farm.delay)
 				end
 			end)
 		else
@@ -6064,7 +5940,7 @@ end)()
 end)()
 
 -- ---------------------------------------------------------------
--- 10) WINDUI ARAYÜZ YÜKLEME & SEKMELER
+-- 9) WINDUI KÜTÜPHANESİ & TÜM MODÜLLERİN ENTEGRASYONU
 -- ---------------------------------------------------------------
 ;(function()
 	local WindUI
@@ -6110,14 +5986,26 @@ end)()
 		},
 	})
 
-	-- Mobil açma butonu bağlantısı
-	if mobileOpenBtn and Window then
+	-- Menü Açma/Kapatma Garantisi (PC'de G ve RightShift)
+	pcall(function() Window:SetToggleKey(Enum.KeyCode.G) end)
+
+	UserInputService.InputBegan:Connect(function(input, gpe)
+		if gpe then return end
+		if input.KeyCode == Enum.KeyCode.G or input.KeyCode == Enum.KeyCode.RightShift then
+			pcall(function() Window:Toggle() end)
+		end
+	end)
+
+	-- Mobildeki OPEN butonunun WindUI ile bağlanması
+	if mobileOpenBtn then
 		mobileOpenBtn.MouseButton1Click:Connect(function()
 			pcall(function() Window:Toggle() end)
 		end)
 	end
 
-	-- A) MAIN SEKMESİ (DİREKT SEKME, KATALOG DEĞİL)
+	-- ===========================================================
+	-- A) MAIN SEKMESİ (DİREKT SEKME — TÜM GENEL SİSTEM MODÜLLERİ)
+	-- ===========================================================
 	local MainTab = Window:Tab({
 		Title = "Main",
 		Icon = "solar:home-2-bold",
@@ -6125,22 +6013,127 @@ end)()
 
 	MainTab:Toggle({
 		Title = "Oyuncu ESP (Genel)",
+		Desc = "Tüm oyuncuları gösterir",
 		Value = normalEspEnabled or false,
 		Callback = function(v)
 			normalEspEnabled = v
 		end,
 	})
 
-	MainTab:Dropdown({
-		Title = "Arayüz Teması",
-		Values = { "Dark", "Midnight", "Rose", "Plant", "Red", "Purple" },
-		Value = "Dark",
-		Callback = function(themeName)
-			pcall(function() WindUI:SetTheme(themeName) end)
+	MainTab:Toggle({
+		Title = "FPS Optimizer",
+		Desc = "Gereksiz render efektlerini kapatıp FPS artırır",
+		Value = optimizerEnabled or false,
+		Callback = function(v)
+			optimizerEnabled = v
 		end,
 	})
 
+	MainTab:Toggle({
+		Title = "Speed Glitch (Bhop)",
+		Desc = "Hızlı koşma ve zıplama hızlandırması",
+		Value = speedGlitchEnabled or false,
+		Callback = function(v)
+			speedGlitchEnabled = v
+		end,
+	})
+
+	MainTab:Slider({
+		Title = "Speed Glitch Gücü",
+		Value = {
+			Min = 20,
+			Max = 120,
+			Default = speedGlitchPower or 45,
+		},
+		Callback = function(v)
+			speedGlitchPower = v
+		end,
+	})
+
+	MainTab:Toggle({
+		Title = "Hitbox Expander (Genel)",
+		Desc = "Düşman hitboxlarını genişletir",
+		Value = hitboxEnabled or false,
+		Callback = function(v)
+			hitboxEnabled = v
+		end,
+	})
+
+	MainTab:Slider({
+		Title = "Hitbox Boyutu",
+		Value = {
+			Min = 2,
+			Max = 30,
+			Default = hitboxSize or 14,
+		},
+		Callback = function(v)
+			hitboxSize = v
+		end,
+	})
+
+	MainTab:Toggle({
+		Title = "Anti-Fling Koruması",
+		Desc = "Oyuncuların sizi uçurmasını engeller",
+		Value = antiFlingEnabled or false,
+		Callback = function(v)
+			antiFlingEnabled = v
+		end,
+	})
+
+	MainTab:Toggle({
+		Title = "ForceField Kalkanı (FF)",
+		Desc = "Karaktere koruma kalkanı ekler",
+		Value = ffEnabled or false,
+		Callback = function(v)
+			ffEnabled = v
+		end,
+	})
+
+	MainTab:Toggle({
+		Title = "Custom FOV",
+		Desc = "Kamera görüş açısını genişletir",
+		Value = customFovEnabled or false,
+		Callback = function(v)
+			customFovEnabled = v
+		end,
+	})
+
+	MainTab:Slider({
+		Title = "FOV Değeri",
+		Value = {
+			Min = 50,
+			Max = 120,
+			Default = customFovValue or 90,
+		},
+		Callback = function(v)
+			customFovValue = v
+		end,
+	})
+
+	MainTab:Toggle({
+		Title = "SpinBot (Fırlatmayan)",
+		Desc = "Karakteri kendi etrafında hızlıca döndürür",
+		Value = spinBotEnabled or false,
+		Callback = function(v)
+			spinBotEnabled = v
+		end,
+	})
+
+	MainTab:Slider({
+		Title = "SpinBot Hızı",
+		Value = {
+			Min = 10,
+			Max = 100,
+			Default = spinBotSpeed or 30,
+		},
+		Callback = function(v)
+			spinBotSpeed = v
+		end,
+	})
+
+	-- ===========================================================
 	-- B) MM2 KATALOĞU (Section altında Combat ve Visual sekmeleri)
+	-- ===========================================================
 	local MM2Section = Window:Section({
 		Title = "MM2",
 		Opened = true,
@@ -6156,9 +6149,10 @@ end)()
 		Icon = "solar:eye-bold",
 	})
 
-	-- COMBAT İÇERİĞİ
+	-- --- COMBAT İÇERİĞİ ---
 	CombatTab:Toggle({
 		Title = "MM2 Rol ESP (Roller & Silah)",
+		Desc = "Katil, Şerif ve Masum rollerini renkli gösterir",
 		Value = mm2EspEnabled or false,
 		Callback = function(v)
 			mm2EspEnabled = v
@@ -6167,6 +6161,15 @@ end)()
 
 	CombatTab:Button({
 		Title = "TP Drop Gun (Yere Düşen Silah)",
+		Desc = "Düşen silahı doğrudan elinize ışınlar",
+		Callback = function()
+			pcall(triggerTpGun)
+		end,
+	})
+
+	CombatTab:Keybind({
+		Title = "TP Drop Gun Tuş Ataması",
+		Value = "T",
 		Callback = function()
 			pcall(triggerTpGun)
 		end,
@@ -6174,6 +6177,15 @@ end)()
 
 	CombatTab:Button({
 		Title = "Shoot Murderer (Silent Aim)",
+		Desc = "Katili anında hedefler ve ateş eder",
+		Callback = function()
+			pcall(triggerShootMurderer)
+		end,
+	})
+
+	CombatTab:Keybind({
+		Title = "Shoot Murderer Tuş Ataması",
+		Value = "E",
 		Callback = function()
 			pcall(triggerShootMurderer)
 		end,
@@ -6195,7 +6207,7 @@ end)()
 
 	CombatTab:Toggle({
 		Title = "Wallbang (Sadece Şerif)",
-		Desc = "Duvar arkasından nişan alıp sıkarak katili vurma",
+		Desc = "Duvar arkasındaki katile doğrultup sıktığınızda mermi duvardan geçip katili vurur",
 		Value = ZX.wallbang.enabled,
 		Callback = function(v)
 			ZX.wallbang.enabled = v
@@ -6205,33 +6217,17 @@ end)()
 
 	CombatTab:Toggle({
 		Title = "Auto Farm (Coin & Invisible)",
-		Desc = "Harita altına inip görünmez olarak coin toplar",
+		Desc = "Harita altına inip görünmez olarak coinleri otomatik toplar",
 		Value = ZX.farm.enabled,
 		Callback = function(v)
 			ZX.startFarm(v)
 		end,
 	})
 
-	CombatTab:Toggle({
-		Title = "Coin Kutu ESP",
-		Value = ZX.box.coin,
-		Callback = function(v)
-			ZX.box.coin = v
-		end,
-	})
-
-	CombatTab:Toggle({
-		Title = "Dropped Gun ESP",
-		Value = ZX.box.gun,
-		Callback = function(v)
-			ZX.box.gun = v
-		end,
-	})
-
-	-- VISUAL İÇERİĞİ
+	-- --- VISUAL İÇERİĞİ ---
 	VisualTab:Toggle({
-		Title = "Bullet Tracer (Neon İz)",
-		Desc = "Merminin çarptığı duvara kadar uzanan neon çizgi",
+		Title = "Bullet Tracer (Neon Çizgi)",
+		Desc = "Merminin çarptığı duvara kadar gerçek neon çizgi çeker",
 		Value = ZX.tracer.enabled,
 		Callback = function(v)
 			ZX.tracer.enabled = v
@@ -6250,11 +6246,42 @@ end)()
 		end,
 	})
 
+	VisualTab:Slider({
+		Title = "Tracer Çizgi Kalınlığı",
+		Desc = "Neon çizginin kalınlığı",
+		Value = {
+			Min = 1,
+			Max = 10,
+			Default = ZX.tracer.thickness,
+		},
+		Callback = function(v)
+			ZX.tracer.thickness = v
+		end,
+	})
+
 	VisualTab:Colorpicker({
 		Title = "Tracer Neon Rengi",
 		Default = ZX.tracer.color,
 		Callback = function(c)
 			ZX.tracer.color = c
+		end,
+	})
+
+	VisualTab:Toggle({
+		Title = "Dropped Gun ESP (Düşen Silah)",
+		Desc = "Yere düşen şerif silahını sarı kutu ESP ile gösterir",
+		Value = ZX.box.gun,
+		Callback = function(v)
+			ZX.box.gun = v
+		end,
+	})
+
+	VisualTab:Toggle({
+		Title = "Coin ESP (Kutu ESP)",
+		Desc = "Haritadaki tüm coinleri altın sarısı kutu ESP ile gösterir",
+		Value = ZX.box.coin,
+		Callback = function(v)
+			ZX.box.coin = v
 		end,
 	})
 
@@ -6286,7 +6313,7 @@ end)()
 
 	VisualTab:Toggle({
 		Title = "Spin Items (Silah & Kılıç Döndürme)",
-		Desc = "Silah aşağı 380° döner, kılıç sola döner",
+		Desc = "Silah aşağı 380° durmadan döner, kılıç sola döner",
 		Value = ZX.spin.enabled,
 		Callback = function(v)
 			ZX.spin.enabled = v
@@ -6294,7 +6321,7 @@ end)()
 	})
 
 	VisualTab:Slider({
-		Title = "Dönüş Hızı",
+		Title = "Dönüş Hızı (Derece/sn)",
 		Value = {
 			Min = 50,
 			Max = 1200,
@@ -6307,10 +6334,63 @@ end)()
 
 	VisualTab:Toggle({
 		Title = "Game Timer (Maç Süresi)",
-		Desc = "Üstte maçın süresini veya LOBBY yazar",
+		Desc = "Lobide LOBBY, maç başladığında gerçek kalan süreyi gösterir",
 		Value = ZX.timer.enabled,
 		Callback = function(v)
 			ZX.timer.enabled = v
+		end,
+	})
+
+	-- ===========================================================
+	-- C) TSB SEKMESİ (THE STRONGEST BATTLEGROUNDS)
+	-- ===========================================================
+	local TSBTab = Window:Tab({
+		Title = "TSB",
+		Icon = "solar:flame-bold",
+	})
+
+	TSBTab:Toggle({
+		Title = "Auto Block (Otomatik Blok)",
+		Desc = "Saldırı anında otomatik blok yapar",
+		Value = autoBlockEnabled or false,
+		Callback = function(v)
+			autoBlockEnabled = v
+		end,
+	})
+
+	TSBTab:Toggle({
+		Title = "Counter ESP (TSB)",
+		Desc = "Düşman sayaçlarını gösterir",
+		Value = tsbCounterEspEnabled or false,
+		Callback = function(v)
+			tsbCounterEspEnabled = v
+		end,
+	})
+
+	-- ===========================================================
+	-- D) SETTINGS SEKMESİ (TEMA & ARAYÜZ AYARLARI)
+	-- ===========================================================
+	local SettingsTab = Window:Tab({
+		Title = "Settings",
+		Icon = "solar:settings-bold",
+	})
+
+	SettingsTab:Dropdown({
+		Title = "Arayüz Teması",
+		Desc = "WindUI arayüz temasını değiştirir",
+		Values = { "Dark", "Midnight", "Rose", "Plant", "Red", "Purple" },
+		Value = "Dark",
+		Callback = function(themeName)
+			pcall(function() WindUI:SetTheme(themeName) end)
+		end,
+	})
+
+	SettingsTab:Keybind({
+		Title = "Menü Açma/Kapatma Tuşu",
+		Desc = "Menüyü açıp kapatacak tuş (Varsayılan: G)",
+		Value = "G",
+		Callback = function(key)
+			pcall(function() Window:SetToggleKey(Enum.KeyCode[key] or Enum.KeyCode.G) end)
 		end,
 	})
 end)()
