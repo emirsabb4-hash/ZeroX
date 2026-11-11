@@ -5359,7 +5359,7 @@ local ZX = {
 	spin     = { enabled = false, speed = 380, angle = 0, isFiring = false },
 	timer    = { enabled = false },
 	box      = { coin = false, gun = false },
-	farm     = { enabled = false, savedCF = nil, saved = {}, prevWB = false, hide = true, delay = 0.08 },
+	farm     = { enabled = false, savedCF = nil, saved = {}, prevWB = false, hide = true, delay = 0.08, flySpeed = 35 },
 	wallbang = { enabled = true },
 	hooked   = {},
 }
@@ -5656,7 +5656,20 @@ ZX.createNeonTracer = function(gunTool, targetPosition)
 
 	local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
 	local hrp  = char:FindFirstChild("HumanoidRootPart")
-	local origin = hand and hand.Position or (hrp and hrp.Position + Vector3.new(0, 1.5, 0))
+
+	-- NISAN DUZELTMESI: tracer namlu ucundan cikar. Eski kod el pozisyonunu
+	-- kullanıyordu, namlu elden yukarida oldugu icin cizgi mermi hizasinin
+	-- altinda gorunuyordu. Handle'in -Z yonu namlu yonudur (ZXMuzzleAtt ile ayni hat).
+	local origin = nil
+	if gunTool then
+		local handle = gunTool:FindFirstChild("Handle") or gunTool:FindFirstChildWhichIsA("BasePart")
+		if handle and handle:IsA("BasePart") then
+			origin = (handle.CFrame * CFrame.new(0, 0, -(handle.Size.Z * 0.5 + 0.3))).Position
+		end
+	end
+	if not origin then
+		origin = hand and hand.Position or (hrp and hrp.Position + Vector3.new(0, 1.5, 0))
+	end
 	if not origin then return end
 
 	local dist = (targetPosition - origin).Magnitude
@@ -5770,6 +5783,7 @@ local function checkWallBetween(p1, p2, ignoreChar, targetChar)
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { ignoreChar }
 	params.IgnoreWater = true
+	params.RespectCanCollide = true
 	local res = Workspace:Raycast(p1, dir, params)
 	if res and res.Instance and not res.Instance:IsDescendantOf(targetChar) then
 		return true
@@ -5798,11 +5812,22 @@ local function executeDirectShot(gunTool)
 	local mRoot = murderer.Character:FindFirstChild("HumanoidRootPart") or murderer.Character:FindFirstChild("UpperTorso")
 	local isWall = root and mRoot and checkWallBetween(root.Position, mRoot.Position, char, murderer.Character)
 
+	local wallShot = false
 	if isWall and root and mRoot and (ZX.wallbang.enabled or wallbangEnabled) then
+		wallShot = true
+		-- FIX: 0.02s bekleyince sunucu hala eski konumu goruyordu, ates duvar
+		-- arkasindan atilmis sayiliyordu. Katilin YANINA iniyoruz (ustune degil,
+		-- tavan icine girmesin) ve sunucu konumu isleyene kadar bekliyoruz.
+		local away = Vector3.new(root.Position.X - mRoot.Position.X, 0, root.Position.Z - mRoot.Position.Z)
+		local side = (away.Magnitude > 0.05) and away.Unit * 3.5 or Vector3.new(0, 0, -3.5)
 		pcall(function()
-			root.CFrame = CFrame.new(mRoot.Position + Vector3.new(0, 3.5, 0), mRoot.Position)
+			root.CFrame = CFrame.lookAt(
+				mRoot.Position + side + Vector3.new(0, 1, 0),
+				Vector3.new(mRoot.Position.X, mRoot.Position.Y + 1, mRoot.Position.Z)
+			)
+			root.AssemblyLinearVelocity = Vector3.zero
 		end)
-		task.wait(0.02)
+		task.wait(0.14)
 	elseif root then
 		pcall(function()
 			root.CFrame = CFrame.new(root.Position, Vector3.new(aimPos.X, root.Position.Y, aimPos.Z))
@@ -5816,17 +5841,27 @@ local function executeDirectShot(gunTool)
 
 	if remoteType == "CreateBeam" then
 		pcall(function() shootRemote:InvokeServer(1, aimPos, "AH2") end)
+		if wallShot then
+			task.wait(0.05)
+			local freshAim = calculatePrecisionAim(murderer) or aimPos
+			pcall(function() shootRemote:InvokeServer(1, freshAim, "AH2") end)
+		end
 	elseif remoteType == "ShootEvent" then
 		local hand = char and (char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") or root)
 		pcall(function() shootRemote:FireServer(CFrame.new(hand.Position), CFrame.new(aimPos)) end)
+		if wallShot then
+			task.wait(0.05)
+			local freshAim = calculatePrecisionAim(murderer) or aimPos
+			pcall(function() shootRemote:FireServer(CFrame.new(hand.Position), CFrame.new(freshAim)) end)
+		end
 	end
 
 	if ZX.tracer.enabled then
 		ZX.createNeonTracer(gunTool, aimPos)
 	end
 
-	if isWall and root and oldCF then
-		task.wait(0.02)
+	if wallShot and root and oldCF then
+		task.wait(0.14)
 		pcall(function()
 			root.CFrame = oldCF
 		end)
@@ -6116,30 +6151,87 @@ do
 					local c = player.Character
 					local r = c and c:FindFirstChild("HumanoidRootPart")
 					local h = c and c:FindFirstChildOfClass("Humanoid")
-					if r and h and h.Health > 0 then
+					if not (r and h and h.Health > 0) then
+						task.wait(0.5)
+					else
 						if ZX.farm.hide then setInvisible(true) end
-						r.AssemblyLinearVelocity = Vector3.zero
 						if tick() - lastScan > 1.2 then refreshCoins() lastScan = tick() end
-						local best, bestD = nil, math.huge
+
+						-- UÇUŞ MODU: coinlere yavaşça uçulur, yaklaşınca touch ile toplanır.
+						-- Eski mantık uzaktan touch basıyordu; reach güvenliği onu
+						-- engelliyordu, bu yüzden farm çalışmıyordu.
+						local remaining = {}
 						for _, coin in ipairs(coins) do
 							if coin.Parent and coin:IsDescendantOf(Workspace) then
-								local d = (coin.Position - r.Position).Magnitude
-								if d < bestD then best = coin bestD = d end
+								table.insert(remaining, coin)
 							end
 						end
-						if best then
-							pcall(function()
-								if firetouchinterest then
-									firetouchinterest(best, r, 0)
-									firetouchinterest(best, r, 1)
+						table.sort(remaining, function(a, b)
+							local da = (a.Position - r.Position).Magnitude
+							local db = (b.Position - r.Position).Magnitude
+							return da < db
+						end)
+
+						for _, coin in ipairs(remaining) do
+							if not ZX.farm.enabled then break end
+							if coin.Parent and coin:IsDescendantOf(Workspace) then
+								local cc = player.Character
+								local rr = cc and cc:FindFirstChild("HumanoidRootPart")
+								local hh = cc and cc:FindFirstChildOfClass("Humanoid")
+								if rr and hh and hh.Health > 0 then
+									if ZX.farm.hide then setInvisible(true) end
+									rr.AssemblyLinearVelocity = Vector3.zero
+
+									local target = coin.Position + Vector3.new(0, 0.6, 0)
+									local touchReach = (ZX.move and ZX.move.maxTouchReach) or 8
+									local guard = 0
+									local dt = RunService.Heartbeat:Wait()
+									while ZX.farm.enabled and coin.Parent and coin:IsDescendantOf(Workspace) and guard < 600 do
+										guard = guard + 1
+										local cc2 = player.Character
+										local rr2 = cc2 and cc2:FindFirstChild("HumanoidRootPart")
+										local hh2 = cc2 and cc2:FindFirstChildOfClass("Humanoid")
+										if not (rr2 and hh2 and hh2.Health > 0) then break end
+										if ZX.farm.hide then setInvisible(true) end
+										rr2.AssemblyLinearVelocity = Vector3.zero
+
+										local dist = (target - rr2.Position).Magnitude
+										if dist <= touchReach then
+											pcall(function()
+												if firetouchinterest then
+													firetouchinterest(coin, rr2, 0)
+													firetouchinterest(coin, rr2, 1)
+												end
+											end)
+											rr2.CFrame = CFrame.new(target)
+											break
+										end
+
+										local flyStep = math.max(ZX.farm.flySpeed or 35, 5) * dt
+										local toGo = (target - rr2.Position)
+										if toGo.Magnitude <= flyStep then
+											rr2.CFrame = CFrame.new(target)
+										else
+											local u = toGo.Unit
+											rr2.CFrame = CFrame.lookAt(rr2.Position + u * flyStep, target)
+										end
+										dt = RunService.Heartbeat:Wait()
+									end
+									task.wait(ZX.farm.delay)
 								end
-							end)
-							r.CFrame = CFrame.new(best.Position + Vector3.new(0, 0.5, 0))
-						else
-							r.CFrame = r.CFrame - Vector3.new(0, 9, 0)
+							end
+						end
+
+						-- tüm coinler bitince başladığın yere dön, yeni coin bekle
+						if ZX.farm.enabled then
+							local cc3 = player.Character
+							local rr3 = cc3 and cc3:FindFirstChild("HumanoidRootPart")
+							if rr3 and ZX.farm.savedCF then
+								pcall(function() rr3.CFrame = ZX.farm.savedCF end)
+							end
+							task.wait(1.0)
 						end
 					end
-					task.wait(ZX.farm.delay)
 				end
 			end)
 		else
@@ -6151,6 +6243,159 @@ do
 				pcall(function() r.CFrame = ZX.farm.savedCF end)
 			end
 		end
+	end
+end
+
+-- ---------------------------------------------------------------
+-- 11.5) AUTO TP DROP GUN & MAP DUPER (MM2)
+-- ---------------------------------------------------------------
+do
+	-- AUTO TP DROP GUN: silah dustugu an otomatik isinlanma
+	ZX.autotp = { enabled = false, delay = 0.12 }
+	Workspace.DescendantAdded:Connect(function(obj)
+		if not ZX.autotp.enabled then return end
+		local n = obj.Name:lower()
+		if n == "gundrop" or n:find("gundrop") then
+			task.delay(ZX.autotp.delay, function()
+				if ZX.autotp.enabled then pcall(triggerTpGun) end
+			end)
+		end
+	end)
+
+	-- MAP DUPER: reset + teleport ile secilen haritaya surekli oy verir.
+	-- MM2 oylamasi lobideki gri panellere basarak yapilir; reset atinca
+	-- tekrar oy verilebildigi icin paneli bulup uzerine isinlanir.
+	ZX.mapdupe = {
+		enabled  = false,
+		selected = "Bank 2",
+		delay    = 0.3,
+		notifyMsg = nil,
+		maps     = { "Bank 2", "Biolab", "Factory", "Hospital 3", "Hotel 2", "House 2", "Mansion 2", "MilBase", "Office 3", "Police Station", "Research Facility", "Workplace" },
+	}
+
+	local function normName(s)
+		s = (s or ""):lower()
+		return s:gsub("[^%w]", "")
+	end
+
+	-- Oy panelini bul: adi haritayi tasiyan part/ekran; "vote" adi geciyorsa oncelikli
+	local function findVotePad(mapNorm)
+		local voteWords = { "vote", "panel" }
+		local best, any
+		local count = 0
+		for _, inst in ipairs(Workspace:GetDescendants()) do
+			count = count + 1
+			if count > 9000 or best then break end
+			if inst:IsA("BasePart") then
+				local n = normName(inst.Name)
+				if n ~= "" and n:find(mapNorm, 1, true) then
+					local chain = inst.Name:lower()
+					local p = inst.Parent
+					local hops = 0
+					while p and p ~= Workspace and hops < 4 do
+						chain = chain .. " " .. p.Name:lower()
+						p = p.Parent
+						hops = hops + 1
+					end
+					for _, w in ipairs(voteWords) do
+						if chain:find(w, 1, true) then
+							best = inst
+							break
+						end
+					end
+					any = any or inst
+				end
+			elseif inst:IsA("TextLabel") then
+				local t = normName(inst.Text)
+				if t ~= "" and t:find(mapNorm, 1, true) then
+					local holder = inst:FindFirstAncestorOfClass("BasePart")
+					if holder then
+						local chain = holder.Name:lower()
+						local p = holder.Parent
+						local hops = 0
+						while p and p ~= Workspace and hops < 4 do
+							chain = chain .. " " .. p.Name:lower()
+							p = p.Parent
+							hops = hops + 1
+						end
+						for _, w in ipairs(voteWords) do
+							if chain:find(w, 1, true) then
+								best = best or holder
+								break
+							end
+						end
+						any = any or holder
+					end
+				end
+			end
+		end
+		return best or any
+	end
+
+	ZX.startMapDupe = function(state)
+		ZX.mapdupe.enabled = state
+		if not state then return end
+		task.spawn(function()
+			local misses = 0
+			local cycles = 0
+			while ZX.mapdupe.enabled and cycles < 120 do
+				cycles = cycles + 1
+				local mapLabel = ZX.mapdupe.selected
+				if not mapLabel then
+					ZX.mapdupe.enabled = false
+					ZX.mapdupe.notifyMsg = "Önce harita seç!"
+					break
+				end
+
+				-- 1) RESET: karakteri oldur, lobide yeniden dog
+				local oldChar = player.Character
+				local hum = oldChar and oldChar:FindFirstChildOfClass("Humanoid")
+				if hum then
+					pcall(function() hum.Health = 0 end)
+					pcall(function() hum:ChangeState(Enum.HumanoidStateType.Dead) end)
+				end
+
+				-- 2) respawn bekle
+				local waited = 0
+				local nc, nr, nh
+				while waited < 10 do
+					task.wait(0.1)
+					waited = waited + 0.1
+					nc = player.Character
+					nr = nc and nc:FindFirstChild("HumanoidRootPart")
+					nh = nc and nc:FindFirstChildOfClass("Humanoid")
+					if nr and nh and nh.Health > 0 and nc ~= oldChar then break end
+				end
+
+				if not (nr and nh and nh.Health > 0) then
+					misses = misses + 1
+					if misses >= 3 then
+						ZX.mapdupe.enabled = false
+						ZX.mapdupe.notifyMsg = "Respawn alınamadı, durdu."
+						break
+					end
+				else
+					-- 3) secilen haritanin oy panelini bul
+					local pad = findVotePad(normName(mapLabel))
+					if not pad or not pad.Parent then
+						misses = misses + 1
+						if misses >= 3 then
+							ZX.mapdupe.enabled = false
+							ZX.mapdupe.notifyMsg = "Oy paneli bulunamadı; oylama bitmiş olabilir. Dupe durdu."
+							break
+						end
+					else
+						misses = 0
+						-- 4) panelin uzerine isinla (Touched oy verir)
+						pcall(function()
+							nr.CFrame = CFrame.new(pad.Position + Vector3.new(0, 1.2, 0))
+						end)
+						task.wait(math.max(ZX.mapdupe.delay or 0.3, 0.1))
+					end
+				end
+			end
+			ZX.mapdupe.enabled = false
+		end)
 	end
 end
 
@@ -6269,6 +6514,7 @@ MainVisualSection:Toggle({
 	Value = fullBrightEnabled or false,
 	Callback = function(v)
 		fullBrightEnabled = v
+		pcall(toggleFullBright, v)
 	end,
 })
 
@@ -6435,6 +6681,15 @@ MM2ActionSection:Keybind({
 	end,
 })
 
+MM2ActionSection:Toggle({
+	Title = "Auto TP Drop Gun",
+	Desc = "Silah düştüğü an tuş gerekmeden otomatik ışınlanır",
+	Value = false,
+	Callback = function(v)
+		ZX.autotp.enabled = v
+	end,
+})
+
 MM2ActionSection:Button({
 	Title = "Vur",
 	Desc = "Katilin pozisyonuna doğrudan kurşun sıkar",
@@ -6531,6 +6786,15 @@ FarmSection:Slider({
 	Value = { Min = 30, Max = 300, Default = 80 },
 	Callback = function(v)
 		ZX.farm.delay = v / 1000
+	end,
+})
+
+FarmSection:Slider({
+	Title = "Farm Uçuş Hızı",
+	Step = 5,
+	Value = { Min = 10, Max = 100, Default = 35 },
+	Callback = function(v)
+		ZX.farm.flySpeed = v
 	end,
 })
 
@@ -6700,6 +6964,51 @@ MM2WorldSection:Toggle({
 	Value = false,
 	Callback = function(v)
 		ZX.timer.enabled = v
+	end,
+})
+
+local MapDupeSection = VisualTab:Section({ Title = "Map Duper" })
+
+MapDupeSection:Dropdown({
+	Title = "Harita Seç",
+	Desc = "Sadece bir harita seçebilirsin",
+	Values = ZX.mapdupe.maps,
+	Value = ZX.mapdupe.selected,
+	Callback = function(sel)
+		ZX.mapdupe.selected = sel
+	end,
+})
+
+MapDupeSection:Toggle({
+	Title = "Map Dupe Aktif",
+	Desc = "Reset çekip seçilen haritanın oy paneline ışınlanarak sürekli oy verir, oylama bitince durur",
+	Value = false,
+	Callback = function(v)
+		if v then
+			ZX.mapdupe.notifyMsg = nil
+			ZX.startMapDupe(true)
+			task.spawn(function()
+				while ZX.mapdupe.enabled do
+					task.wait(0.5)
+				end
+				if ZX.mapdupe.notifyMsg and ZX.winduiNotify then
+					ZX.winduiNotify("Map Dupe", ZX.mapdupe.notifyMsg)
+					ZX.mapdupe.notifyMsg = nil
+				end
+			end)
+		else
+			ZX.mapdupe.enabled = false
+			ZX.mapdupe.notifyMsg = nil
+		end
+	end,
+})
+
+MapDupeSection:Slider({
+	Title = "Dupe Hızı",
+	Step = 50,
+	Value = { Min = 100, Max = 2000, Default = 300 },
+	Callback = function(v)
+		ZX.mapdupe.delay = v / 1000
 	end,
 })
 
@@ -7236,6 +7545,9 @@ pcall(function()
 		addStepperRow("Farm Hızı (ms)", function() return math.floor(ZX.farm.delay * 1000 + 0.5) end, function(v)
 			ZX.farm.delay = v / 1000
 		end, 30, 300, 10, nx())
+		addStepperRow("Farm Uçuş Hızı", function() return ZX.farm.flySpeed or 35 end, function(v)
+			ZX.farm.flySpeed = v
+		end, 10, 100, 5, nx())
 
 		-- GÖRSEL
 		addHeaderRow("GÖRSEL", nx())
@@ -7331,57 +7643,28 @@ pcall(function()
 		}):Play()
 	end
 
-	-- AYARLAR butonu (suruklenebilir)
-	local fab = Instance.new("TextButton")
-	fab.Name = "AyarlarFAB"
-	fab.Size = UDim2.fromOffset(92, 34)
-	fab.Position = UDim2.new(1, -104, 0.5, -17)
-	fab.BackgroundColor3 = ayarBg
-	fab.BorderSizePixel = 0
-	fab.Font = Enum.Font.GothamBold
-	fab.TextSize = 12
-	fab.TextColor3 = ayarAccent
-	fab.Text = "AYARLAR"
-	fab.Parent = AyarGui
-
-	local fCorner = Instance.new("UICorner")
-	fCorner.CornerRadius = UDim.new(1, 0)
-	fCorner.Parent = fab
-
-	local fStroke = Instance.new("UIStroke")
-	fStroke.Color = ayarAccent
-	fStroke.Thickness = 1
-	fStroke.Transparency = 0.35
-	fStroke.Parent = fab
-
-	fab.MouseButton1Click:Connect(function()
-		setOpen(not openState)
-	end)
 	closeBtn.MouseButton1Click:Connect(function()
 		setOpen(false)
 	end)
 
-	local dragging = false
-	local dragStart = nil
-	local startPos = nil
-	fab.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = fab.Position
-		end
-	end)
-	fab.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = false
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and dragStart and startPos and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			fab.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-		end
-	end)
+	-- Ekran butonu kaldirildi; panel Ayarlar sekmesinden açılır
+	ZX.winduiNotify = function(title, content)
+		pcall(function()
+			WindUI:Notify({ Title = title, Content = content, Duration = 4 })
+		end)
+	end
+	ZX.ayarlar = {
+		open   = function() setOpen(true) end,
+		close  = function() setOpen(false) end,
+		toggle = function() setOpen(not openState) end,
+	}
+	UISettingsSection:Button({
+		Title = "Birleşik Ayarlar Panelini Aç",
+		Desc = "Tüm ayarlar tek panelde, kayarak açılır",
+		Callback = function()
+			setOpen(not openState)
+		end,
+	})
 end)
 
 WindUI:Notify({
