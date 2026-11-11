@@ -5768,12 +5768,11 @@ if showToast then
 end
 
 -- =========================================================================
--- ZeroX v1.0.1 — CATALOG / VISUAL / COMBAT EXTENSION
--- WindUI temasından uyarlanmış koyu palet + katalog sekmeleri
+-- ZeroX v1.0.1 — WINDUI COMPLETE CATALOG EXTENSION
+-- Full WindUI Library Integration (Footagesus/WindUI)
 -- =========================================================================
 local ZX = {
-	accent = Color3.fromRGB(0, 212, 255),
-	tracer = { enabled = false, duration = 1.0, color = Color3.fromRGB(0, 255, 140), thickness = 1.6 },
+	tracer = { enabled = false, duration = 1.0, color = Color3.fromRGB(0, 255, 140), thickness = 1.8 },
 	skins = { knife = "Default", gun = "Default" },
 	orig = {},
 	spin = { enabled = false, speed = 380, angle = 0 },
@@ -5782,710 +5781,196 @@ local ZX = {
 	farm = { enabled = false, savedCF = nil, saved = {}, prevWB = false, hide = true },
 	wallbang = { enabled = false },
 	hooked = {},
-	subTab = "COMBAT",
-	accented = {},
-	accentStrokes = {},
 }
 
 -- ---------------------------------------------------------------
--- 1) KATALOG YAPISI (CATALOG -> COMBAT / VISUAL)
+-- 1) ESKİ OBSIDIAN MENÜSÜNÜ GİZLEME
 -- ---------------------------------------------------------------
-;(function()
-	for _, d in ipairs(topBar:GetDescendants()) do
-		if d:IsA("TextLabel") then
-			if d.Text == "ZWYY" then d.Text = "ZeroX" end
-			if d.Text == "PC V3" or d.Text == "MOBİL" or d.Text == "MOBILE" or d.Text == "MOBIL" or d.Text:find("MOB") then
-				d.Text = "v1.0.1"
+pcall(function()
+	if menuGui then
+		for _, ch in ipairs(menuGui:GetChildren()) do
+			if ch.Name == "ZwyyObsidianMain" or (mainFrame and ch == mainFrame) then
+				ch.Visible = false
+				ch.Position = UDim2.new(-10, 0, -10, 0)
 			end
-		elseif d:IsA("TextButton") then
-			if d.Text == "MM2" then d.Text = "CATALOG" end
 		end
 	end
+	if mainFrame then
+		mainFrame.Visible = false
+		mainFrame.Position = UDim2.new(-10, 0, -10, 0)
+	end
+end)
 
-	local subBar = Instance.new("Frame")
-	subBar.Name = "CatalogSubBar"
-	subBar.Size = UDim2.new(1, -20, 0, 26)
-	subBar.Position = UDim2.new(0, 10, 0, 46)
-	subBar.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
-	subBar.BorderSizePixel = 0
-	subBar.Visible = false
-	subBar.ZIndex = 4
-	subBar.Parent = mainFrame
+-- ---------------------------------------------------------------
+-- 2) KOSTÜM LİSTELERİ (DEFAULT EN ÜSTTE)
+-- ---------------------------------------------------------------
+local function C(r, g, b) return Color3.fromRGB(r, g, b) end
 
-	local sbCorner = Instance.new("UICorner")
-	sbCorner.CornerRadius = UDim.new(0, 6)
-	sbCorner.Parent = subBar
+ZX.knifeSkins = {
+	{ name = "Default", color = nil },
+	{ name = "Chroma Lightbringer", color = C(255, 120, 255), mat = Enum.Material.Neon, glow = true },
+	{ name = "Lightbringer", color = C(255, 235, 160), mat = Enum.Material.Neon, glow = true },
+	{ name = "Hallows Edge", color = C(120, 40, 200), mat = Enum.Material.Neon, glow = true },
+	{ name = "Elderwood Blade", color = C(60, 200, 120), mat = Enum.Material.Grass, glow = true },
+	{ name = "Vampire's Edge", color = C(180, 0, 40), mat = Enum.Material.Neon, glow = true },
+	{ name = "Icewing", color = C(150, 220, 255), mat = Enum.Material.Ice, glow = true },
+	{ name = "Icebreaker", color = C(120, 200, 255), mat = Enum.Material.Ice, glow = true },
+	{ name = "Frostbite", color = C(90, 180, 255), mat = Enum.Material.Neon, glow = true },
+	{ name = "Spider", color = C(80, 80, 90), mat = Enum.Material.Metal },
+	{ name = "Batwing", color = C(70, 40, 110), mat = Enum.Material.Neon },
+	{ name = "Nightstar", color = C(60, 60, 180), mat = Enum.Material.Neon, glow = true },
+	{ name = "Ghostblade", color = C(200, 255, 255), mat = Enum.Material.ForceField, glow = true },
+	{ name = "Radiance", color = C(255, 220, 80), mat = Enum.Material.Neon, glow = true },
+	{ name = "Prismatic", color = C(255, 100, 200), mat = Enum.Material.Neon, glow = true },
+	{ name = "Asteria", color = C(180, 120, 255), mat = Enum.Material.Neon, glow = true },
+	{ name = "Blossom", color = C(255, 150, 200), mat = Enum.Material.Neon },
+	{ name = "Corrupt", color = C(90, 255, 60), mat = Enum.Material.Neon, glow = true },
+	{ name = "Darkbringer", color = C(120, 0, 160), mat = Enum.Material.Neon, glow = true },
+	{ name = "Fang", color = C(230, 230, 230), mat = Enum.Material.Metal },
+	{ name = "Flames", color = C(255, 90, 0), mat = Enum.Material.Neon, glow = true },
+	{ name = "Heat", color = C(255, 50, 0), mat = Enum.Material.Neon },
+	{ name = "Laser", color = C(255, 0, 60), mat = Enum.Material.Neon, glow = true },
+	{ name = "Amerilaser", color = C(255, 0, 0), mat = Enum.Material.Neon, glow = true },
+	{ name = "Blaster", color = C(180, 200, 255), mat = Enum.Material.Neon },
+	{ name = "Mint", color = C(120, 255, 200), mat = Enum.Material.Neon },
+	{ name = "Pixel", color = C(255, 60, 60), mat = Enum.Material.SmoothPlastic },
+	{ name = "Prince of Stars", color = C(120, 160, 255), mat = Enum.Material.Neon, glow = true },
+	{ name = "Radiant", color = C(255, 255, 180), mat = Enum.Material.Neon, glow = true },
+	{ name = "Red Seer", color = C(255, 40, 40), mat = Enum.Material.Neon },
+	{ name = "Seer", color = C(255, 120, 120), mat = Enum.Material.Neon },
+	{ name = "Snowflake", color = C(200, 240, 255), mat = Enum.Material.Ice, glow = true },
+	{ name = "Tides", color = C(0, 160, 255), mat = Enum.Material.Neon },
+	{ name = "Viper", color = C(60, 255, 60), mat = Enum.Material.Neon },
+	{ name = "Xeno", color = C(160, 255, 120), mat = Enum.Material.Neon, glow = true },
+	{ name = "Candy", color = C(255, 120, 180), mat = Enum.Material.Neon },
+	{ name = "Gingerblade", color = C(200, 100, 40), mat = Enum.Material.Wood },
+	{ name = "Jingle", color = C(220, 40, 40), mat = Enum.Material.Neon },
+}
 
-	local sbStroke = Instance.new("UIStroke")
-	sbStroke.Color = Color3.fromRGB(24, 24, 24)
-	sbStroke.Thickness = 1
-	sbStroke.Parent = subBar
+ZX.gunSkins = {
+	{ name = "Default", color = nil },
+	{ name = "Chroma Darkbringer", color = C(150, 80, 255), mat = Enum.Material.Neon, glow = true },
+	{ name = "Darkbringer", color = C(90, 0, 140), mat = Enum.Material.Neon, glow = true },
+	{ name = "Elderwood Revolver", color = C(70, 180, 100), mat = Enum.Material.Grass, glow = true },
+	{ name = "Amerilaser", color = C(255, 0, 0), mat = Enum.Material.Neon, glow = true },
+	{ name = "Blaster", color = C(180, 200, 255), mat = Enum.Material.Neon },
+	{ name = "Laser", color = C(255, 0, 60), mat = Enum.Material.Neon, glow = true },
+	{ name = "Luger", color = C(200, 200, 210), mat = Enum.Material.Metal },
+	{ name = "Mint", color = C(120, 255, 200), mat = Enum.Material.Neon },
+	{ name = "Pixel", color = C(255, 60, 60), mat = Enum.Material.SmoothPlastic },
+	{ name = "Predator", color = C(40, 120, 80), mat = Enum.Material.Metal },
+	{ name = "Reptile", color = C(60, 180, 90), mat = Enum.Material.Neon },
+	{ name = "Shark", color = C(80, 140, 200), mat = Enum.Material.Metal },
+	{ name = "Ghost", color = C(220, 255, 255), mat = Enum.Material.ForceField, glow = true },
+	{ name = "Golden", color = C(255, 210, 60), mat = Enum.Material.Neon, glow = true },
+	{ name = "Frostbite", color = C(90, 180, 255), mat = Enum.Material.Neon, glow = true },
+	{ name = "Iceblaster", color = C(120, 200, 255), mat = Enum.Material.Ice, glow = true },
+	{ name = "Nightfire", color = C(120, 40, 200), mat = Enum.Material.Neon },
+	{ name = "Phantom", color = C(160, 160, 200), mat = Enum.Material.ForceField },
+	{ name = "Radiant", color = C(255, 255, 180), mat = Enum.Material.Neon, glow = true },
+	{ name = "Spider", color = C(80, 80, 90), mat = Enum.Material.Metal },
+	{ name = "Xeno", color = C(160, 255, 120), mat = Enum.Material.Neon, glow = true },
+	{ name = "Corrupt", color = C(90, 255, 60), mat = Enum.Material.Neon, glow = true },
+	{ name = "Candy", color = C(255, 120, 180), mat = Enum.Material.Neon },
+	{ name = "Jingle", color = C(220, 40, 40), mat = Enum.Material.Neon },
+}
 
-	local subIndicator = Instance.new("Frame")
-	subIndicator.Size = UDim2.new(0.5, -4, 1, -4)
-	subIndicator.Position = UDim2.new(0, 2, 0, 2)
-	subIndicator.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
-	subIndicator.BorderSizePixel = 0
-	subIndicator.ZIndex = 5
-	subIndicator.Parent = subBar
+local knifeNames = {}
+for _, s in ipairs(ZX.knifeSkins) do table.insert(knifeNames, s.name) end
 
-	local siCorner = Instance.new("UICorner")
-	siCorner.CornerRadius = UDim.new(0, 4)
-	siCorner.Parent = subIndicator
+local gunNames = {}
+for _, s in ipairs(ZX.gunSkins) do table.insert(gunNames, s.name) end
 
-	local siStroke = Instance.new("UIStroke")
-	siStroke.Color = Color3.fromRGB(42, 42, 42)
-	siStroke.Thickness = 1
-	siStroke.Parent = subIndicator
+-- ---------------------------------------------------------------
+-- 3) SİLAH & KOSTÜM YÖNETİCİSİ
+-- ---------------------------------------------------------------
+local function findHandle(tool)
+	local h = tool:FindFirstChild("Handle")
+	if h and h:IsA("BasePart") then return h end
+	return tool:FindFirstChildWhichIsA("BasePart", true)
+end
 
-	local function makeSubButton(txt, xScale)
-		local b = Instance.new("TextButton")
-		b.Text = txt
-		b.Font = Enum.Font.GothamBold
-		b.TextSize = 10
-		b.TextColor3 = Color3.fromRGB(120, 120, 120)
-		b.Size = UDim2.new(0.5, 0, 1, 0)
-		b.Position = UDim2.new(xScale, 0, 0, 0)
-		b.BackgroundTransparency = 1
-		b.ZIndex = 6
-		b.Parent = subBar
-		return b
+local function weaponKind(tool)
+	if not tool or not tool:IsA("Tool") then return nil end
+	local n = tool.Name:lower()
+	if n:find("knife") or n:find("blade") or n:find("murderer") then return "knife" end
+	if n:find("gun") or n:find("revolver") or n:find("sheriff") then return "gun" end
+	return nil
+end
+
+ZX.weaponKind = weaponKind
+
+ZX.applyWeaponSkin = function(tool)
+	local kind = weaponKind(tool)
+	if not kind then return end
+	local handle = findHandle(tool)
+	if not handle then return end
+
+	if not ZX.orig[tool] then
+		local mesh = handle:FindFirstChildOfClass("SpecialMesh")
+		ZX.orig[tool] = {
+			color = handle.Color,
+			material = handle.Material,
+			size = handle.Size,
+			meshId = mesh and mesh.MeshId or nil,
+			textureId = mesh and mesh.TextureId or nil,
+			meshScale = mesh and mesh.Scale or nil,
+		}
 	end
 
-	local combatBtn = makeSubButton("COMBAT", 0)
-	local visualBtn = makeSubButton("VISUAL", 0.5)
+	local o = ZX.orig[tool]
+	local list = (kind == "knife") and ZX.knifeSkins or ZX.gunSkins
+	local sel = (kind == "knife") and ZX.skins.knife or ZX.skins.gun
 
-	mm2Content.Position = UDim2.new(0, 10, 0, 80)
-	mm2Content.Size = UDim2.new(1, -20, 1, -84)
-
-	local visualContent = Instance.new("ScrollingFrame")
-	visualContent.Name = "CatalogVisual"
-	visualContent.Size = UDim2.new(1, -20, 1, -84)
-	visualContent.Position = UDim2.new(0, 10, 0, 80)
-	visualContent.BackgroundTransparency = 1
-	visualContent.BorderSizePixel = 0
-	visualContent.ScrollBarThickness = 4
-	visualContent.ScrollBarImageColor3 = Color3.fromRGB(65, 65, 65)
-	visualContent.CanvasSize = UDim2.new(0, 0, 0, 0)
-	visualContent.Visible = false
-	visualContent.ZIndex = 3
-	visualContent.Parent = mainFrame
-
-	local vLayout = Instance.new("UIListLayout")
-	vLayout.Padding = UDim.new(0, 8)
-	vLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	vLayout.Parent = visualContent
-
-	vLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		visualContent.CanvasSize = UDim2.new(0, 0, 0, vLayout.AbsoluteContentSize.Y + 20)
-	end)
-
-	ZX.visual = visualContent
-	ZX.combat = mm2Content
-	ZX.subIndicator = subIndicator
-	ZX.subBar = subBar
-	table.insert(ZX.accentStrokes, siStroke)
-
-	local function refreshSub()
-		local isVisual = (ZX.subTab == "VISUAL")
-		combatBtn.TextColor3 = isVisual and Color3.fromRGB(120, 120, 120) or Color3.fromRGB(250, 250, 250)
-		visualBtn.TextColor3 = isVisual and Color3.fromRGB(250, 250, 250) or Color3.fromRGB(120, 120, 120)
-		TweenService:Create(subIndicator, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			Position = UDim2.new(isVisual and 0.5 or 0, 2, 0, 2)
-		}):Play()
+	local entry = list[1]
+	for _, e in ipairs(list) do
+		if e.name == sel then entry = e break end
 	end
 
-	combatBtn.MouseButton1Click:Connect(function()
-		if ZX.subTab == "COMBAT" then return end
-		ZX.subTab = "COMBAT"
-		refreshSub()
-	end)
+	local mesh = handle:FindFirstChildOfClass("SpecialMesh")
+	local oldTrail = handle:FindFirstChild("ZXSkinTrail")
 
-	visualBtn.MouseButton1Click:Connect(function()
-		if ZX.subTab == "VISUAL" then return end
-		ZX.subTab = "VISUAL"
-		refreshSub()
-	end)
-
-	ZX.refreshSub = refreshSub
-
-	RunService.RenderStepped:Connect(function()
-		local catalogOpen = (currentTab == "MM2") and (mm2Content.Visible or visualContent.Visible)
-		subBar.Visible = catalogOpen
-		if catalogOpen then
-			if ZX.subTab == "VISUAL" then
-				visualContent.Visible = true
-				mm2Content.Visible = false
-			else
-				visualContent.Visible = false
-				mm2Content.Visible = true
-			end
-		else
-			visualContent.Visible = false
+	if entry.color == nil then
+		handle.Color = o.color
+		handle.Material = o.material
+		handle.Size = o.size
+		if mesh then
+			if o.meshId then mesh.MeshId = o.meshId end
+			if o.textureId then mesh.TextureId = o.textureId end
+			if o.meshScale then mesh.Scale = o.meshScale end
 		end
-	end)
-end)()
+		if oldTrail then oldTrail:Destroy() end
+		return
+	end
 
--- ---------------------------------------------------------------
--- 2) TEMA UYGULAYICI
--- ---------------------------------------------------------------
-ZX.applyTheme = function()
-	for _, el in ipairs(ZX.accented) do
-		pcall(function() el.BackgroundColor3 = ZX.accent end)
+	handle.Color = entry.color
+	handle.Material = entry.mat or Enum.Material.Neon
+	if mesh and o.meshScale then
+		mesh.Scale = o.meshScale * (entry.scale or 1)
 	end
-	for _, el in ipairs(ZX.accentStrokes or {}) do
-		pcall(function() el.Color = ZX.accent end)
+
+	if oldTrail then oldTrail:Destroy() end
+	if entry.glow then
+		local a0 = Instance.new("Attachment")
+		a0.Position = Vector3.new(0, 0.45, 0)
+		a0.Parent = handle
+		local a1 = Instance.new("Attachment")
+		a1.Position = Vector3.new(0, -0.45, 0)
+		a1.Parent = handle
+		local tr = Instance.new("Trail")
+		tr.Name = "ZXSkinTrail"
+		tr.Attachment0 = a0
+		tr.Attachment1 = a1
+		tr.Color = ColorSequence.new(entry.color)
+		tr.Transparency = NumberSequence.new(0.4)
+		tr.Lifetime = 0.22
+		tr.LightEmission = 1
+		tr.Parent = handle
 	end
-	if mainStroke then mainStroke.Color = ZX.accent end
 end
 
 -- ---------------------------------------------------------------
--- 3) VISUAL SEKMESİ — BAŞLIK + KARTLAR
--- ---------------------------------------------------------------
-;(function()
-	local header = Instance.new("Frame")
-	header.Size = UDim2.new(1, 0, 0, 34)
-	header.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-	header.BorderSizePixel = 0
-	header.ZIndex = 4
-	header.Parent = ZX.visual
-
-	local hCorner = Instance.new("UICorner")
-	hCorner.CornerRadius = UDim.new(0, 6)
-	hCorner.Parent = header
-
-	local hBar = Instance.new("Frame")
-	hBar.Size = UDim2.new(0, 2, 0, 16)
-	hBar.Position = UDim2.new(0, 0, 0.5, -8)
-	hBar.BackgroundColor3 = ZX.accent
-	hBar.BorderSizePixel = 0
-	hBar.ZIndex = 5
-	hBar.Parent = header
-
-	local hLabel = Instance.new("TextLabel")
-	hLabel.Text = "VISUAL"
-	hLabel.Font = Enum.Font.GothamBold
-	hLabel.TextSize = 12
-	hLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-	hLabel.Size = UDim2.new(1, -20, 1, 0)
-	hLabel.Position = UDim2.new(0, 12, 0, 0)
-	hLabel.TextXAlignment = Enum.TextXAlignment.Left
-	hLabel.BackgroundTransparency = 1
-	hLabel.ZIndex = 5
-	hLabel.Parent = header
-
-	table.insert(ZX.accented, hBar)
-
-	-- BULLET TRACER
-	local trCard, trToggle, setTrVisual = createModuleCard(ZX.visual, "Bullet Tracer (Neon İz)")
-	local trGear = createGearButton(trCard)
-	local trPanel = createSettingsPanel(ZX.visual, 126)
-
-	addSubToggle(trPanel, "Neon Çizgi (Sadece Bizde)", ZX.tracer.enabled, function(s)
-		ZX.tracer.enabled = s
-		setTrVisual(s)
-	end)
-
-	addStepperRow(trPanel, "Kaybolma (ms x100)", math.floor(ZX.tracer.duration * 10 + 0.5), 1, 2, 50, function(v)
-		ZX.tracer.duration = v / 10
-	end)
-
-	addColorPaletteRow(trPanel, "Neon Rengi", ZX.tracer.color, function(c)
-		ZX.tracer.color = c
-	end)
-
-	trGear.MouseButton1Click:Connect(function()
-		trPanel.Visible = not trPanel.Visible
-	end)
-	trToggle.MouseButton1Click:Connect(function()
-		ZX.tracer.enabled = not ZX.tracer.enabled
-		setTrVisual(ZX.tracer.enabled)
-	end)
-
-	-- SPIN ITEMS
-	local spCard, spToggle, setSpVisual = createModuleCard(ZX.visual, "Spin Items (Silah & Kılıç)")
-	local spGear = createGearButton(spCard)
-	local spPanel = createSettingsPanel(ZX.visual, 50)
-
-	addStepperRow(spPanel, "Dönüş Hızı", ZX.spin.speed, 20, 20, 2000, function(v)
-		ZX.spin.speed = v
-	end)
-
-	spGear.MouseButton1Click:Connect(function()
-		spPanel.Visible = not spPanel.Visible
-	end)
-	spToggle.MouseButton1Click:Connect(function()
-		ZX.spin.enabled = not ZX.spin.enabled
-		setSpVisual(ZX.spin.enabled)
-	end)
-
-	-- GAME TIMER
-	local gtCard, gtToggle, setGtVisual = createModuleCard(ZX.visual, "Game Timer (Maç Süresi)")
-	local gtGear = createGearButton(gtCard)
-	local gtPanel = createSettingsPanel(ZX.visual, 46)
-
-	addSubToggle(gtPanel, "Üstte Süre Göster", ZX.timer.enabled, function(s)
-		ZX.timer.enabled = s
-		setGtVisual(s)
-	end)
-
-	gtGear.MouseButton1Click:Connect(function()
-		gtPanel.Visible = not gtPanel.Visible
-	end)
-	gtToggle.MouseButton1Click:Connect(function()
-		ZX.timer.enabled = not ZX.timer.enabled
-		setGtVisual(ZX.timer.enabled)
-	end)
-end)()
-
--- ---------------------------------------------------------------
--- 4) KATALOG (SKIN LİSTELERİ) + SKIN UYGULAYICI
--- ---------------------------------------------------------------
-;(function()
-	local function C(r, g, b) return Color3.fromRGB(r, g, b) end
-
-	ZX.knifeSkins = {
-		{ name = "Default", color = nil },
-		{ name = "Chroma Lightbringer", color = C(255, 120, 255), mat = Enum.Material.Neon, scale = 1.05, glow = true },
-		{ name = "Lightbringer", color = C(255, 235, 160), mat = Enum.Material.Neon, glow = true },
-		{ name = "Hallows Edge", color = C(120, 40, 200), mat = Enum.Material.Neon, glow = true },
-		{ name = "Elderwood Blade", color = C(60, 200, 120), mat = Enum.Material.Grass, glow = true },
-		{ name = "Vampire's Edge", color = C(180, 0, 40), mat = Enum.Material.Neon, glow = true },
-		{ name = "Icewing", color = C(150, 220, 255), mat = Enum.Material.Ice, glow = true },
-		{ name = "Icebreaker", color = C(120, 200, 255), mat = Enum.Material.Ice, glow = true },
-		{ name = "Frostbite", color = C(90, 180, 255), mat = Enum.Material.Neon, glow = true },
-		{ name = "Spider", color = C(80, 80, 90), mat = Enum.Material.Metal },
-		{ name = "Batwing", color = C(70, 40, 110), mat = Enum.Material.Neon },
-		{ name = "Nightstar", color = C(60, 60, 180), mat = Enum.Material.Neon, glow = true },
-		{ name = "Ghostblade", color = C(200, 255, 255), mat = Enum.Material.ForceField, glow = true },
-		{ name = "Radiance", color = C(255, 220, 80), mat = Enum.Material.Neon, glow = true },
-		{ name = "Prismatic", color = C(255, 100, 200), mat = Enum.Material.Neon, glow = true },
-		{ name = "Asteria", color = C(180, 120, 255), mat = Enum.Material.Neon, glow = true },
-		{ name = "Blossom", color = C(255, 150, 200), mat = Enum.Material.Neon },
-		{ name = "Corrupt", color = C(90, 255, 60), mat = Enum.Material.Neon, glow = true },
-		{ name = "Darkbringer", color = C(120, 0, 160), mat = Enum.Material.Neon, glow = true },
-		{ name = "Fang", color = C(230, 230, 230), mat = Enum.Material.Metal },
-		{ name = "Flames", color = C(255, 90, 0), mat = Enum.Material.Neon, glow = true },
-		{ name = "Heat", color = C(255, 50, 0), mat = Enum.Material.Neon },
-		{ name = "Laser", color = C(255, 0, 60), mat = Enum.Material.Neon, glow = true },
-		{ name = "Amerilaser", color = C(255, 0, 0), mat = Enum.Material.Neon, glow = true },
-		{ name = "Blaster", color = C(180, 200, 255), mat = Enum.Material.Neon },
-		{ name = "Mint", color = C(120, 255, 200), mat = Enum.Material.Neon },
-		{ name = "Pixel", color = C(255, 60, 60), mat = Enum.Material.SmoothPlastic },
-		{ name = "Prince of Stars", color = C(120, 160, 255), mat = Enum.Material.Neon, glow = true },
-		{ name = "Radiant", color = C(255, 255, 180), mat = Enum.Material.Neon, glow = true },
-		{ name = "Red Seer", color = C(255, 40, 40), mat = Enum.Material.Neon },
-		{ name = "Seer", color = C(255, 120, 120), mat = Enum.Material.Neon },
-		{ name = "Snowflake", color = C(200, 240, 255), mat = Enum.Material.Ice, glow = true },
-		{ name = "Tides", color = C(0, 160, 255), mat = Enum.Material.Neon },
-		{ name = "Viper", color = C(60, 255, 60), mat = Enum.Material.Neon },
-		{ name = "Xeno", color = C(160, 255, 120), mat = Enum.Material.Neon, glow = true },
-		{ name = "Candy", color = C(255, 120, 180), mat = Enum.Material.Neon },
-		{ name = "Gingerblade", color = C(200, 100, 40), mat = Enum.Material.Wood },
-		{ name = "Jingle", color = C(220, 40, 40), mat = Enum.Material.Neon },
-	}
-
-	ZX.gunSkins = {
-		{ name = "Default", color = nil },
-		{ name = "Chroma Darkbringer", color = C(150, 80, 255), mat = Enum.Material.Neon, scale = 1.1, glow = true },
-		{ name = "Darkbringer", color = C(90, 0, 140), mat = Enum.Material.Neon, glow = true },
-		{ name = "Elderwood Revolver", color = C(70, 180, 100), mat = Enum.Material.Grass, glow = true },
-		{ name = "Amerilaser", color = C(255, 0, 0), mat = Enum.Material.Neon, glow = true },
-		{ name = "Blaster", color = C(180, 200, 255), mat = Enum.Material.Neon },
-		{ name = "Laser", color = C(255, 0, 60), mat = Enum.Material.Neon, glow = true },
-		{ name = "Luger", color = C(200, 200, 210), mat = Enum.Material.Metal },
-		{ name = "Mint", color = C(120, 255, 200), mat = Enum.Material.Neon },
-		{ name = "Pixel", color = C(255, 60, 60), mat = Enum.Material.SmoothPlastic },
-		{ name = "Predator", color = C(40, 120, 80), mat = Enum.Material.Metal },
-		{ name = "Reptile", color = C(60, 180, 90), mat = Enum.Material.Neon },
-		{ name = "Shark", color = C(80, 140, 200), mat = Enum.Material.Metal },
-		{ name = "Ghost", color = C(220, 255, 255), mat = Enum.Material.ForceField, glow = true },
-		{ name = "Golden", color = C(255, 210, 60), mat = Enum.Material.Neon, glow = true },
-		{ name = "Frostbite", color = C(90, 180, 255), mat = Enum.Material.Neon, glow = true },
-		{ name = "Iceblaster", color = C(120, 200, 255), mat = Enum.Material.Ice, glow = true },
-		{ name = "Nightfire", color = C(120, 40, 200), mat = Enum.Material.Neon },
-		{ name = "Phantom", color = C(160, 160, 200), mat = Enum.Material.ForceField },
-		{ name = "Radiant", color = C(255, 255, 180), mat = Enum.Material.Neon, glow = true },
-		{ name = "Spider", color = C(80, 80, 90), mat = Enum.Material.Metal },
-		{ name = "Xeno", color = C(160, 255, 120), mat = Enum.Material.Neon, glow = true },
-		{ name = "Corrupt", color = C(90, 255, 60), mat = Enum.Material.Neon, glow = true },
-		{ name = "Candy", color = C(255, 120, 180), mat = Enum.Material.Neon },
-		{ name = "Jingle", color = C(220, 40, 40), mat = Enum.Material.Neon },
-	}
-
-	local function findHandle(tool)
-		local h = tool:FindFirstChild("Handle")
-		if h and h:IsA("BasePart") then return h end
-		return tool:FindFirstChildWhichIsA("BasePart", true)
-	end
-
-	local function weaponKind(tool)
-		if not tool or not tool:IsA("Tool") then return nil end
-		local n = tool.Name:lower()
-		if n:find("knife") or n:find("blade") or n:find("murderer") then return "knife" end
-		if n:find("gun") or n:find("revolver") or n:find("sheriff") then return "gun" end
-		return nil
-	end
-
-	ZX.weaponKind = weaponKind
-
-	ZX.applyWeaponSkin = function(tool)
-		local kind = weaponKind(tool)
-		if not kind then return end
-		local handle = findHandle(tool)
-		if not handle then return end
-
-		if not ZX.orig[tool] then
-			local mesh = handle:FindFirstChildOfClass("SpecialMesh")
-			ZX.orig[tool] = {
-				color = handle.Color,
-				material = handle.Material,
-				size = handle.Size,
-				meshId = mesh and mesh.MeshId or nil,
-				textureId = mesh and mesh.TextureId or nil,
-				meshScale = mesh and mesh.Scale or nil,
-			}
-		end
-
-		local o = ZX.orig[tool]
-		local list = (kind == "knife") and ZX.knifeSkins or ZX.gunSkins
-		local sel = (kind == "knife") and ZX.skins.knife or ZX.skins.gun
-
-		local entry = list[1]
-		for _, e in ipairs(list) do
-			if e.name == sel then
-				entry = e
-				break
-			end
-		end
-
-		local mesh = handle:FindFirstChildOfClass("SpecialMesh")
-		local oldTrail = handle:FindFirstChild("ZXSkinTrail")
-
-		if entry.color == nil then
-			handle.Color = o.color
-			handle.Material = o.material
-			handle.Size = o.size
-			if mesh then
-				if o.meshId then mesh.MeshId = o.meshId end
-				if o.textureId then mesh.TextureId = o.textureId end
-				if o.meshScale then mesh.Scale = o.meshScale end
-			end
-			if oldTrail then oldTrail:Destroy() end
-			return
-		end
-
-		handle.Color = entry.color
-		handle.Material = entry.mat or Enum.Material.Neon
-		if mesh and o.meshScale then
-			mesh.Scale = o.meshScale * (entry.scale or 1)
-		end
-
-		if oldTrail then oldTrail:Destroy() end
-		if entry.glow then
-			local a0 = Instance.new("Attachment")
-			a0.Position = Vector3.new(0, 0.45, 0)
-			a0.Parent = handle
-			local a1 = Instance.new("Attachment")
-			a1.Position = Vector3.new(0, -0.45, 0)
-			a1.Parent = handle
-			local tr = Instance.new("Trail")
-			tr.Name = "ZXSkinTrail"
-			tr.Attachment0 = a0
-			tr.Attachment1 = a1
-			tr.Color = ColorSequence.new(entry.color)
-			tr.Transparency = NumberSequence.new(0.4)
-			tr.Lifetime = 0.22
-			tr.LightEmission = 1
-			tr.Parent = handle
-		end
-	end
-
-	-- SKIN SEÇİCİ PANEL
-	local picker = Instance.new("Frame")
-	picker.Name = "ZXSkinPicker"
-	picker.Size = UDim2.new(1, -40, 1, -96)
-	picker.Position = UDim2.new(0, 20, 0, 74)
-	picker.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-	picker.BorderSizePixel = 0
-	picker.Visible = false
-	picker.ZIndex = 40
-	picker.Parent = mainFrame
-
-	local pkCorner = Instance.new("UICorner")
-	pkCorner.CornerRadius = UDim.new(0, 8)
-	pkCorner.Parent = picker
-
-	local pkStroke = Instance.new("UIStroke")
-	pkStroke.Color = Color3.fromRGB(40, 40, 40)
-	pkStroke.Thickness = 1.2
-	pkStroke.Parent = picker
-
-	local pkTitle = Instance.new("TextLabel")
-	pkTitle.Text = "SKIN SEÇ"
-	pkTitle.Font = Enum.Font.GothamBold
-	pkTitle.TextSize = 12
-	pkTitle.TextColor3 = Color3.fromRGB(240, 240, 240)
-	pkTitle.Size = UDim2.new(1, -90, 0, 30)
-	pkTitle.Position = UDim2.new(0, 14, 0, 0)
-	pkTitle.TextXAlignment = Enum.TextXAlignment.Left
-	pkTitle.BackgroundTransparency = 1
-	pkTitle.ZIndex = 41
-	pkTitle.Parent = picker
-
-	local pkClose = Instance.new("TextButton")
-	pkClose.Text = "X"
-	pkClose.Font = Enum.Font.GothamBold
-	pkClose.TextSize = 12
-	pkClose.TextColor3 = Color3.fromRGB(200, 200, 200)
-	pkClose.Size = UDim2.new(0, 26, 0, 24)
-	pkClose.Position = UDim2.new(1, -34, 0, 3)
-	pkClose.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-	pkClose.BorderSizePixel = 0
-	pkClose.ZIndex = 41
-	pkClose.Parent = picker
-
-	local pcCorner = Instance.new("UICorner")
-	pcCorner.CornerRadius = UDim.new(0, 4)
-	pcCorner.Parent = pkClose
-
-	local pkList = Instance.new("ScrollingFrame")
-	pkList.Size = UDim2.new(1, -16, 1, -38)
-	pkList.Position = UDim2.new(0, 8, 0, 32)
-	pkList.BackgroundTransparency = 1
-	pkList.BorderSizePixel = 0
-	pkList.ScrollBarThickness = 4
-	pkList.ScrollBarImageColor3 = Color3.fromRGB(65, 65, 65)
-	pkList.CanvasSize = UDim2.new(0, 0, 0, 0)
-	pkList.ZIndex = 41
-	pkList.Parent = picker
-
-	local pkLayout = Instance.new("UIListLayout")
-	pkLayout.Padding = UDim.new(0, 5)
-	pkLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	pkLayout.Parent = pkList
-
-	pkLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		pkList.CanvasSize = UDim2.new(0, 0, 0, pkLayout.AbsoluteContentSize.Y + 10)
-	end)
-
-	pkClose.MouseButton1Click:Connect(function()
-		picker.Visible = false
-	end)
-
-	ZX.closeSkinPicker = function()
-		picker.Visible = false
-	end
-
-	ZX.openSkinPicker = function(kind)
-		for _, ch in ipairs(pkList:GetChildren()) do
-			if ch:IsA("TextButton") then ch:Destroy() end
-		end
-		local list = (kind == "knife") and ZX.knifeSkins or ZX.gunSkins
-		local sel = (kind == "knife") and ZX.skins.knife or ZX.skins.gun
-
-		for _, e in ipairs(list) do
-			local b = Instance.new("TextButton")
-			b.Text = e.name
-			b.Font = Enum.Font.GothamMedium
-			b.TextSize = 12
-			b.TextXAlignment = Enum.TextXAlignment.Left
-			b.TextColor3 = (e.name == sel) and Color3.fromRGB(250, 250, 250) or Color3.fromRGB(190, 190, 190)
-			b.Size = UDim2.new(1, 0, 0, 30)
-			b.BackgroundColor3 = (e.name == sel) and Color3.fromRGB(30, 30, 30) or Color3.fromRGB(16, 16, 16)
-			b.BorderSizePixel = 0
-			b.ZIndex = 42
-			b.Parent = pkList
-
-			local cCorner = Instance.new("UICorner")
-			cCorner.CornerRadius = UDim.new(0, 4)
-			cCorner.Parent = b
-
-			local cStroke = Instance.new("UIStroke")
-			cStroke.Color = (e.name == sel) and ZX.accent or Color3.fromRGB(26, 26, 26)
-			cStroke.Thickness = 1
-			cStroke.Parent = b
-
-			local name = e.name
-			b.MouseButton1Click:Connect(function()
-				if kind == "knife" then
-					ZX.skins.knife = name
-				else
-					ZX.skins.gun = name
-				end
-				picker.Visible = false
-				local char = player.Character
-				local tool = char and char:FindFirstChildOfClass("Tool")
-				if tool then ZX.applyWeaponSkin(tool) end
-				local bp = player:FindFirstChild("Backpack")
-				if bp then
-					for _, t in ipairs(bp:GetChildren()) do
-						if t:IsA("Tool") then ZX.applyWeaponSkin(t) end
-					end
-				end
-				if showToast then showToast("SKIN", "Seçildi: " .. name, 2) end
-				if ZX.updateSkinLabels then ZX.updateSkinLabels() end
-			end)
-		end
-
-		pkTitle.Text = (kind == "knife") and "KILIÇ SKINI" or "SİLAH SKINI"
-		ZX.pickerKind = kind
-		-- Default en üstte kalır
-		picker.Visible = true
-	end
-
-	-- VISUAL: skin kartı
-	local skCard, skToggle, setSkVisual = createModuleCard(ZX.visual, "Silah Skini (Sadece Bizde)")
-	local skGear = createGearButton(skCard)
-	local skPanel = createSettingsPanel(ZX.visual, 84)
-
-	local function makeValueRow(parent, labelText, valueText)
-		local row = Instance.new("Frame")
-		row.Size = UDim2.new(1, 0, 0, 32)
-		row.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
-		row.BorderSizePixel = 0
-		row.ZIndex = 5
-		row.Parent = parent
-
-		local rCorner = Instance.new("UICorner")
-		rCorner.CornerRadius = UDim.new(0, 4)
-		rCorner.Parent = row
-
-		local rStroke = Instance.new("UIStroke")
-		rStroke.Color = Color3.fromRGB(24, 24, 24)
-		rStroke.Thickness = 1
-		rStroke.Parent = row
-
-		local lbl = Instance.new("TextLabel")
-		lbl.Text = labelText
-		lbl.Size = UDim2.new(0, 70, 1, 0)
-		lbl.Position = UDim2.new(0, 10, 0, 0)
-		lbl.TextColor3 = Color3.fromRGB(190, 190, 190)
-		lbl.Font = Enum.Font.Gotham
-		lbl.TextSize = 12
-		lbl.BackgroundTransparency = 1
-		lbl.TextXAlignment = Enum.TextXAlignment.Left
-		lbl.ZIndex = 6
-		lbl.Parent = row
-
-		local val = Instance.new("TextLabel")
-		val.Text = valueText
-		val.Size = UDim2.new(1, -180, 1, 0)
-		val.Position = UDim2.new(0, 84, 0, 0)
-		val.TextColor3 = Color3.fromRGB(240, 240, 240)
-		val.Font = Enum.Font.GothamMedium
-		val.TextSize = 11
-		val.BackgroundTransparency = 1
-		val.TextXAlignment = Enum.TextXAlignment.Left
-		val.TextTruncate = Enum.TextTruncate.AtEnd
-		val.ZIndex = 6
-		val.Parent = row
-
-		local btn = Instance.new("TextButton")
-		btn.Text = "SEÇ"
-		btn.Font = Enum.Font.GothamBold
-		btn.TextSize = 10
-		btn.TextColor3 = Color3.fromRGB(240, 240, 240)
-		btn.Size = UDim2.new(0, 56, 0, 22)
-		btn.Position = UDim2.new(1, -64, 0.5, -11)
-		btn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
-		btn.BorderSizePixel = 0
-		btn.ZIndex = 6
-		btn.Parent = row
-
-		local bCorner = Instance.new("UICorner")
-		bCorner.CornerRadius = UDim.new(0, 4)
-		bCorner.Parent = btn
-
-		local bStroke = Instance.new("UIStroke")
-		bStroke.Color = Color3.fromRGB(36, 36, 36)
-		bStroke.Thickness = 1
-		bStroke.Parent = btn
-
-		return btn, val
-	end
-
-	local knifeBtn, knifeVal = makeValueRow(skPanel, "Kılıç", ZX.skins.knife)
-	local gunBtn, gunVal = makeValueRow(skPanel, "Silah", ZX.skins.gun)
-
-	ZX.updateSkinLabels = function()
-		knifeVal.Text = ZX.skins.knife
-		gunVal.Text = ZX.skins.gun
-	end
-
-	knifeBtn.MouseButton1Click:Connect(function() ZX.openSkinPicker("knife") end)
-	gunBtn.MouseButton1Click:Connect(function() ZX.openSkinPicker("gun") end)
-
-	skGear.MouseButton1Click:Connect(function()
-		skPanel.Visible = not skPanel.Visible
-	end)
-	skToggle.MouseButton1Click:Connect(function()
-		setSkVisual(true)
-		ZX.openSkinPicker("knife")
-	end)
-end)()
-
--- ---------------------------------------------------------------
--- 5) COMBAT — WALLBANG & AUTO FARM KARTLARI
--- ---------------------------------------------------------------
-;(function()
-	local wbCard, wbToggle, setWbVisual = createModuleCard(mm2Content, "Wallbang (Sadece Şerif)")
-	local wbGear = createGearButton(wbCard)
-	local wbPanel = createSettingsPanel(mm2Content, 46)
-
-	addSubToggle(wbPanel, "Duvar Arkası Vuruş", ZX.wallbang.enabled, function(s)
-		ZX.wallbang.enabled = s
-		wallbangEnabled = s or false
-	end)
-
-	wbGear.MouseButton1Click:Connect(function()
-		wbPanel.Visible = not wbPanel.Visible
-	end)
-	wbToggle.MouseButton1Click:Connect(function()
-		ZX.wallbang.enabled = not ZX.wallbang.enabled
-		wallbangEnabled = ZX.wallbang.enabled
-		setWbVisual(ZX.wallbang.enabled)
-	end)
-
-	local afCard, afToggle, setAfVisual = createModuleCard(mm2Content, "Auto Farm (Coin & Invisible)")
-	local afGear = createGearButton(afCard)
-	local afPanel = createSettingsPanel(mm2Content, 120)
-
-	addSubToggle(afPanel, "Kutu ESP (Coin)", ZX.box.coin, function(s)
-		ZX.box.coin = s
-	end)
-
-	addSubToggle(afPanel, "Dropped Gun ESP", ZX.box.gun, function(s)
-		ZX.box.gun = s
-	end)
-
-	addSubToggle(afPanel, "FE Invisible (Görünmez)", true, function(s)
-		ZX.farm.hide = s
-		if not s then
-			ZX.farm.saved = {}
-			local char = player.Character
-			if char then
-				for _, d in ipairs(char:GetDescendants()) do
-					if d:IsA("BasePart") or d:IsA("Decal") then
-						pcall(function() d.Transparency = 0 end)
-					end
-				end
-			end
-		end
-	end)
-
-	afGear.MouseButton1Click:Connect(function()
-		afPanel.Visible = not afPanel.Visible
-	end)
-	afToggle.MouseButton1Click:Connect(function()
-		ZX.farm.enabled = not ZX.farm.enabled
-		setAfVisual(ZX.farm.enabled)
-		if ZX.startFarm then ZX.startFarm(ZX.farm.enabled) end
-	end)
-end)()
-
--- ---------------------------------------------------------------
--- 6) BULLET TRACER MOTORU
+-- 4) BULLET TRACER (NEON ÇİZGİ — DUVARDA DURUR, GEÇMEZ)
 -- ---------------------------------------------------------------
 ;(function()
 	local DrawingLib = rawget(_G, "Drawing")
@@ -6543,7 +6028,7 @@ end)()
 		line.BackgroundColor3 = color
 		line.BackgroundTransparency = 0.05
 		line.ZIndex = 99999
-		line.Parent = espDrawingGui
+		line.Parent = (espDrawingGui or menuGui)
 
 		task.spawn(function()
 			local t0 = os.clock()
@@ -6602,7 +6087,7 @@ end)()
 end)()
 
 -- ---------------------------------------------------------------
--- 7) SPIN ITEMS + MUZZLE SMOKE
+-- 5) SPIN ITEMS (SİLAH AŞAĞI 380°, KILIÇ SOLA DÖNÜŞ)
 -- ---------------------------------------------------------------
 ;(function()
 	local grip = nil
@@ -6666,6 +6151,7 @@ end)()
 		end
 	end)
 
+	-- KAPANMAYAN NAMLU DUMANI
 	ZX.ensureSmoke = function(tool)
 		local kind = ZX.weaponKind and ZX.weaponKind(tool) or nil
 		if kind ~= "gun" then return end
@@ -6706,7 +6192,7 @@ end)()
 end)()
 
 -- ---------------------------------------------------------------
--- 8) ATEŞ ALGILAMA — TRACER + SMOKE + WALLBANG
+-- 6) ATEŞ ALGILAMA — TRACER + SMOKE + WALLBANG
 -- ---------------------------------------------------------------
 ;(function()
 	local function onShot(tool)
@@ -6774,7 +6260,7 @@ end)()
 end)()
 
 -- ---------------------------------------------------------------
--- 9) KUTU ESP (COIN & DROPPED GUN)
+-- 7) KUTU ESP (COIN & DROPPED GUN)
 -- ---------------------------------------------------------------
 ;(function()
 	local entries = {}
@@ -6796,14 +6282,14 @@ end)()
 		box.LineThickness = 0.06
 		box.SurfaceTransparency = 1
 		box.Transparency = 0.15
-		box.Parent = espDrawingGui
+		box.Parent = (espDrawingGui or menuGui)
 
 		local bb = Instance.new("BillboardGui")
 		bb.Size = UDim2.new(0, 120, 0, 18)
 		bb.StudsOffset = Vector3.new(0, 1.6, 0)
 		bb.AlwaysOnTop = true
 		bb.Adornee = part
-		bb.Parent = espDrawingGui
+		bb.Parent = (espDrawingGui or menuGui)
 
 		local lbl = Instance.new("TextLabel")
 		lbl.Size = UDim2.new(1, 0, 1, 0)
@@ -6854,13 +6340,13 @@ end)()
 end)()
 
 -- ---------------------------------------------------------------
--- 10) GAME TIMER
+-- 8) GAME TIMER
 -- ---------------------------------------------------------------
 ;(function()
 	local label = Instance.new("TextLabel")
 	label.Name = "ZXGameTimer"
-	label.Size = UDim2.new(0, 170, 0, 30)
-	label.Position = UDim2.new(0.5, -85, 0, 54)
+	label.Size = UDim2.new(0, 160, 0, 30)
+	label.Position = UDim2.new(0.5, -80, 0, 54)
 	label.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 	label.BackgroundTransparency = 0.25
 	label.BorderSizePixel = 0
@@ -6870,7 +6356,7 @@ end)()
 	label.Text = "LOBBY"
 	label.Visible = false
 	label.ZIndex = 99999
-	label.Parent = menuGui
+	label.Parent = (menuGui or game:GetService("CoreGui"))
 
 	local lCorner = Instance.new("UICorner")
 	lCorner.CornerRadius = UDim.new(0, 6)
@@ -6922,7 +6408,7 @@ end)()
 end)()
 
 -- ---------------------------------------------------------------
--- 11) AUTO FARM (INVISIBLE + UNDER MAP + COIN TOPLA)
+-- 9) AUTO FARM (UNDERGROUND + INVISIBLE + COIN TOPLAMA)
 -- ---------------------------------------------------------------
 ;(function()
 	local coins = {}
@@ -6941,12 +6427,7 @@ end)()
 		if not char then return end
 		if state then
 			for _, d in ipairs(char:GetDescendants()) do
-				if d:IsA("BasePart") then
-					if ZX.farm.saved[d] == nil then
-						ZX.farm.saved[d] = d.Transparency
-					end
-					d.Transparency = 1
-				elseif d:IsA("Decal") then
+				if d:IsA("BasePart") or d:IsA("Decal") then
 					if ZX.farm.saved[d] == nil then
 						ZX.farm.saved[d] = d.Transparency
 					end
@@ -7028,25 +6509,252 @@ end)()
 end)()
 
 -- ---------------------------------------------------------------
--- 12) TEMA KARTI (MAIN)
+-- 10) WINDUI ARAYÜZ YÜKLEME & SEKMELER
 -- ---------------------------------------------------------------
 ;(function()
-	local themeCard, themeToggle, setThemeVisual = createModuleCard(mainContent, "Tema (Arayüz Rengi)")
-	local themeGear = createGearButton(themeCard)
-	local themePanel = createSettingsPanel(mainContent, 60)
+	local WindUI
+	do
+		local ok, res = pcall(function()
+			return loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+		end)
+		if ok and res then
+			WindUI = res
+		else
+			pcall(function()
+				WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+			end)
+		end
+	end
 
-	addColorPaletteRow(themePanel, "Vurgu Rengi", ZX.accent, function(c)
-		ZX.accent = c
-		ZX.applyTheme()
-	end)
+	if not WindUI then
+		warn("[ZeroX] WindUI yuklenemedi!")
+		return
+	end
 
-	themeGear.MouseButton1Click:Connect(function()
-		themePanel.Visible = not themePanel.Visible
-	end)
-	themeToggle.MouseButton1Click:Connect(function()
-		setThemeVisual(true)
-		ZX.applyTheme()
-	end)
+	local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+	local Window = WindUI:CreateWindow({
+		Title = "ZeroX v1.0.1",
+		Author = "ZeroX",
+		Folder = "ZeroXHub",
+		Icon = "solar:shield-bold",
+		Theme = "Dark",
+		Transparent = true,
+		Resizable = true,
+		Size = isMobile and UDim2.fromOffset(480, 290) or UDim2.fromOffset(640, 440),
+		OpenButton = {
+			Title = "ZeroX v1.0.1",
+			CornerRadius = UDim.new(1, 0),
+			StrokeThickness = 2,
+			Enabled = true,
+			Draggable = true,
+		},
+		Topbar = {
+			Height = 44,
+			ButtonsType = "Default",
+		},
+	})
+
+	-- Mobil açma butonu bağlantısı
+	if mobileOpenBtn and Window then
+		mobileOpenBtn.MouseButton1Click:Connect(function()
+			pcall(function() Window:Toggle() end)
+		end)
+	end
+
+	-- A) MAIN SEKMESİ (DİREKT SEKME, KATALOG DEĞİL)
+	local MainTab = Window:Tab({
+		Title = "Main",
+		Icon = "solar:home-2-bold",
+	})
+
+	MainTab:Toggle({
+		Title = "Oyuncu ESP (Genel)",
+		Value = normalEspEnabled or false,
+		Callback = function(v)
+			normalEspEnabled = v
+		end,
+	})
+
+	MainTab:Dropdown({
+		Title = "Arayüz Teması",
+		Values = { "Dark", "Midnight", "Rose", "Plant", "Red", "Purple" },
+		Value = "Dark",
+		Callback = function(themeName)
+			pcall(function() WindUI:SetTheme(themeName) end)
+		end,
+	})
+
+	-- B) MM2 KATALOĞU (Section altında Combat ve Visual sekmeleri)
+	local MM2Section = Window:Section({
+		Title = "MM2",
+	})
+
+	local CombatTab = MM2Section:Tab({
+		Title = "Combat",
+		Icon = "solar:sword-bold",
+	})
+
+	local VisualTab = MM2Section:Tab({
+		Title = "Visual",
+		Icon = "solar:eye-bold",
+	})
+
+	-- COMBAT İÇERİĞİ
+	CombatTab:Toggle({
+		Title = "MM2 Rol ESP (Roller & Silah)",
+		Value = mm2EspEnabled or false,
+		Callback = function(v)
+			mm2EspEnabled = v
+		end,
+	})
+
+	CombatTab:Button({
+		Title = "TP Drop Gun (Yere Düşen Silah)",
+		Callback = function()
+			pcall(triggerTpGun)
+		end,
+	})
+
+	CombatTab:Button({
+		Title = "Shoot Murderer (Silent Aim)",
+		Callback = function()
+			pcall(triggerShootMurderer)
+		end,
+	})
+
+	CombatTab:Button({
+		Title = "Fling Sheriff (Şerifi Uçur)",
+		Callback = function()
+			pcall(triggerFlingSheriff)
+		end,
+	})
+
+	CombatTab:Button({
+		Title = "Fling Murderer (Katili Uçur)",
+		Callback = function()
+			pcall(triggerFlingMurderer)
+		end,
+	})
+
+	CombatTab:Toggle({
+		Title = "Wallbang (Sadece Şerif)",
+		Desc = "Duvar arkasından nişan alıp sıkarak katili vurma",
+		Value = ZX.wallbang.enabled,
+		Callback = function(v)
+			ZX.wallbang.enabled = v
+			wallbangEnabled = v
+		end,
+	})
+
+	CombatTab:Toggle({
+		Title = "Auto Farm (Coin & Invisible)",
+		Desc = "Harita altına inip görünmez olarak coin toplar",
+		Value = ZX.farm.enabled,
+		Callback = function(v)
+			ZX.startFarm(v)
+		end,
+	})
+
+	CombatTab:Toggle({
+		Title = "Coin Kutu ESP",
+		Value = ZX.box.coin,
+		Callback = function(v)
+			ZX.box.coin = v
+		end,
+	})
+
+	CombatTab:Toggle({
+		Title = "Dropped Gun ESP",
+		Value = ZX.box.gun,
+		Callback = function(v)
+			ZX.box.gun = v
+		end,
+	})
+
+	-- VISUAL İÇERİĞİ
+	VisualTab:Toggle({
+		Title = "Bullet Tracer (Neon İz)",
+		Desc = "Merminin çarptığı duvara kadar uzanan neon çizgi",
+		Value = ZX.tracer.enabled,
+		Callback = function(v)
+			ZX.tracer.enabled = v
+		end,
+	})
+
+	VisualTab:Slider({
+		Title = "Tracer Kaybolma Süresi (sn)",
+		Value = {
+			Min = 0.2,
+			Max = 5.0,
+			Default = ZX.tracer.duration,
+		},
+		Callback = function(v)
+			ZX.tracer.duration = v
+		end,
+	})
+
+	VisualTab:Colorpicker({
+		Title = "Tracer Neon Rengi",
+		Default = ZX.tracer.color,
+		Callback = function(c)
+			ZX.tracer.color = c
+		end,
+	})
+
+	VisualTab:Dropdown({
+		Title = "Silah Skini (Gun Skin)",
+		Desc = "Client-side silah kostümü (Default en üstte)",
+		Values = gunNames,
+		Value = "Default",
+		Callback = function(skinName)
+			ZX.skins.gun = skinName
+			local char = player.Character
+			local tool = char and char:FindFirstChildOfClass("Tool")
+			if tool then pcall(ZX.applyWeaponSkin, tool) end
+		end,
+	})
+
+	VisualTab:Dropdown({
+		Title = "Kılıç Skini (Knife Skin)",
+		Desc = "Client-side bıçak kostümü (Default en üstte)",
+		Values = knifeNames,
+		Value = "Default",
+		Callback = function(skinName)
+			ZX.skins.knife = skinName
+			local char = player.Character
+			local tool = char and char:FindFirstChildOfClass("Tool")
+			if tool then pcall(ZX.applyWeaponSkin, tool) end
+		end,
+	})
+
+	VisualTab:Toggle({
+		Title = "Spin Items (Silah & Kılıç Döndürme)",
+		Desc = "Silah aşağı 380° döner, kılıç sola döner",
+		Value = ZX.spin.enabled,
+		Callback = function(v)
+			ZX.spin.enabled = v
+		end,
+	})
+
+	VisualTab:Slider({
+		Title = "Dönüş Hızı",
+		Value = {
+			Min = 50,
+			Max = 1200,
+			Default = ZX.spin.speed,
+		},
+		Callback = function(v)
+			ZX.spin.speed = v
+		end,
+	})
+
+	VisualTab:Toggle({
+		Title = "Game Timer (Maç Süresi)",
+		Desc = "Üstte maçın süresini veya LOBBY yazar",
+		Value = ZX.timer.enabled,
+		Callback = function(v)
+			ZX.timer.enabled = v
+		end,
+	})
 end)()
-
-ZX.applyTheme()
