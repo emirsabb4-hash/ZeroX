@@ -5768,23 +5768,13 @@ if showToast then
 end
 
 -- =========================================================================
--- ZeroX v1.0.1 — WINDUI COMPLETE CATALOG EXTENSION
+-- ZeroX v1.0.1 — WINDUI COMPLETE ZEROX HUB
 -- Full WindUI Library Integration (Footagesus/WindUI)
 -- =========================================================================
-local ZX = {
-	tracer = { enabled = false, duration = 1.0, color = Color3.fromRGB(0, 255, 140), thickness = 1.8 },
-	skins = { knife = "Default", gun = "Default" },
-	orig = {},
-	spin = { enabled = false, speed = 380, angle = 0 },
-	timer = { enabled = false, start = 0 },
-	box = { coin = false, gun = false },
-	farm = { enabled = false, savedCF = nil, saved = {}, prevWB = false, hide = true },
-	wallbang = { enabled = false },
-	hooked = {},
-}
+do
 
 -- ---------------------------------------------------------------
--- 1) ESKİ OBSIDIAN MENÜSÜNÜ GİZLEME
+-- 1) ESKİ OBSIDIAN ARAYÜZÜNÜ VE ÇAKIŞMALARI DEVRE DIŞI BIRAKMA
 -- ---------------------------------------------------------------
 pcall(function()
 	if menuGui then
@@ -5792,87 +5782,156 @@ pcall(function()
 			if ch.Name == "ZwyyObsidianMain" or (mainFrame and ch == mainFrame) then
 				ch.Visible = false
 				ch.Position = UDim2.new(-10, 0, -10, 0)
+				ch:Destroy()
 			end
 		end
+		menuGui.Enabled = false
 	end
 	if mainFrame then
 		mainFrame.Visible = false
-		mainFrame.Position = UDim2.new(-10, 0, -10, 0)
+		mainFrame:Destroy()
 	end
 end)
 
 -- ---------------------------------------------------------------
--- 2) KOSTÜM LİSTELERİ (DEFAULT EN ÜSTTE)
+-- 2) ZEROX DURUM VE VERİ TABLOSU
 -- ---------------------------------------------------------------
+local ZX = {
+	tracer   = { enabled = false, duration = 1.0, color = Color3.fromRGB(0, 255, 140), thickness = 3 },
+	skins    = { enabled = false, knife = "Default", gun = "Default" },
+	orig     = {},
+	origGrip = {},
+	spin     = { enabled = false, speed = 380, angle = 0, isFiring = false },
+	timer    = { enabled = false },
+	box      = { coin = false, gun = false },
+	farm     = { enabled = false, savedCF = nil, saved = {}, prevWB = false, hide = true, delay = 0.08, flySpeed = 35 },
+	wallbang = { enabled = true },
+	hooked   = {},
+}
+
 local function C(r, g, b) return Color3.fromRGB(r, g, b) end
 
+-- ---------------------------------------------------------------
+-- 2.5) HAREKET MOTORU (WALLHOP & INFINITE JUMP) + HITBOX REACH GUVENLIGI
+-- ---------------------------------------------------------------
+ZX.move = {
+	wallhop       = false,
+	whPower       = 50,
+	whRange       = 4,
+	infJump       = false,
+	ijLimit       = 0,
+	ijCount       = 0,
+	ijLast        = 0,
+	whLast        = 0,
+	guard         = true,
+	maxTouchReach = 8,
+}
+
+-- HITBOX FIX: genisletilmis hitbox ile uzaktan basilan sahte dokunusler,
+-- MM2 sunucusunun katili magdurun icine isinlamasini tetikliyordu.
+-- Cozum: iki parcanin GERCEK mesafesi maxTouchReach'ten fazlaysa dokunus basilmaz.
+if firetouchinterest and not ZX.move.rawTouch then
+	local rawTouch = firetouchinterest
+	ZX.move.rawTouch = rawTouch
+	firetouchinterest = function(partA, partB, state)
+		if ZX.move.guard
+			and typeof(partA) == "Instance" and typeof(partB) == "Instance"
+			and partA:IsA("BasePart") and partB:IsA("BasePart") then
+			local dist = (partA.Position - partB.Position).Magnitude
+			if dist > ZX.move.maxTouchReach then
+				return
+			end
+		end
+		return rawTouch(partA, partB, state)
+	end
+end
+
+-- WALLHOP: havadayken duvara yakinsa tekrar zipla, duvardan yukari seker
+UserInputService.JumpRequest:Connect(function()
+	if not ZX.move.wallhop then return end
+	local nowT = os.clock()
+	if nowT - ZX.move.whLast < 0.2 then return end
+
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not (hum and root and hum.Health > 0) then return end
+	if hum.FloorMaterial ~= Enum.Material.Air then return end
+
+	local dir = hum.MoveDirection
+	if dir.Magnitude < 0.05 then
+		local cam = Workspace.CurrentCamera
+		local lv = cam and cam.CFrame.LookVector
+		if lv then dir = Vector3.new(lv.X, 0, lv.Z) end
+	end
+	dir = Vector3.new(dir.X, 0, dir.Z)
+	if dir.Magnitude < 0.05 then return end
+	dir = dir.Unit
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { char }
+
+	local hit = Workspace:Raycast(root.Position, dir * ZX.move.whRange, params)
+	if hit then
+		ZX.move.whLast = nowT
+		hum:ChangeState(Enum.HumanoidStateType.Jumping)
+		root.AssemblyLinearVelocity = Vector3.new(0, ZX.move.whPower, 0) + hit.Normal * 6
+	end
+end)
+
+-- INFINITE JUMP: havada istedigin kadar zıpla (0 = sinirsiz)
+UserInputService.JumpRequest:Connect(function()
+	if not ZX.move.infJump then return end
+	local nowT = os.clock()
+	if nowT - ZX.move.ijLast < 0.25 then return end
+
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not (hum and hum.Health > 0) then return end
+
+	if hum.FloorMaterial ~= Enum.Material.Air then
+		ZX.move.ijCount = 0
+		return
+	end
+	if ZX.move.ijLimit > 0 and (ZX.move.ijCount or 0) >= ZX.move.ijLimit then return end
+
+	ZX.move.ijLast = nowT
+	ZX.move.ijCount = (ZX.move.ijCount or 0) + 1
+	hum:ChangeState(Enum.HumanoidStateType.Jumping)
+end)
+
 ZX.knifeSkins = {
-	{ name = "Default", color = nil },
+	{ name = "Default" },
 	{ name = "Chroma Lightbringer", color = C(255, 120, 255), mat = Enum.Material.Neon, glow = true },
 	{ name = "Lightbringer", color = C(255, 235, 160), mat = Enum.Material.Neon, glow = true },
 	{ name = "Hallows Edge", color = C(120, 40, 200), mat = Enum.Material.Neon, glow = true },
 	{ name = "Elderwood Blade", color = C(60, 200, 120), mat = Enum.Material.Grass, glow = true },
 	{ name = "Vampire's Edge", color = C(180, 0, 40), mat = Enum.Material.Neon, glow = true },
 	{ name = "Icewing", color = C(150, 220, 255), mat = Enum.Material.Ice, glow = true },
-	{ name = "Icebreaker", color = C(120, 200, 255), mat = Enum.Material.Ice, glow = true },
 	{ name = "Frostbite", color = C(90, 180, 255), mat = Enum.Material.Neon, glow = true },
-	{ name = "Spider", color = C(80, 80, 90), mat = Enum.Material.Metal },
 	{ name = "Batwing", color = C(70, 40, 110), mat = Enum.Material.Neon },
 	{ name = "Nightstar", color = C(60, 60, 180), mat = Enum.Material.Neon, glow = true },
 	{ name = "Ghostblade", color = C(200, 255, 255), mat = Enum.Material.ForceField, glow = true },
 	{ name = "Radiance", color = C(255, 220, 80), mat = Enum.Material.Neon, glow = true },
-	{ name = "Prismatic", color = C(255, 100, 200), mat = Enum.Material.Neon, glow = true },
-	{ name = "Asteria", color = C(180, 120, 255), mat = Enum.Material.Neon, glow = true },
-	{ name = "Blossom", color = C(255, 150, 200), mat = Enum.Material.Neon },
-	{ name = "Corrupt", color = C(90, 255, 60), mat = Enum.Material.Neon, glow = true },
 	{ name = "Darkbringer", color = C(120, 0, 160), mat = Enum.Material.Neon, glow = true },
-	{ name = "Fang", color = C(230, 230, 230), mat = Enum.Material.Metal },
 	{ name = "Flames", color = C(255, 90, 0), mat = Enum.Material.Neon, glow = true },
-	{ name = "Heat", color = C(255, 50, 0), mat = Enum.Material.Neon },
-	{ name = "Laser", color = C(255, 0, 60), mat = Enum.Material.Neon, glow = true },
-	{ name = "Amerilaser", color = C(255, 0, 0), mat = Enum.Material.Neon, glow = true },
-	{ name = "Blaster", color = C(180, 200, 255), mat = Enum.Material.Neon },
-	{ name = "Mint", color = C(120, 255, 200), mat = Enum.Material.Neon },
-	{ name = "Pixel", color = C(255, 60, 60), mat = Enum.Material.SmoothPlastic },
-	{ name = "Prince of Stars", color = C(120, 160, 255), mat = Enum.Material.Neon, glow = true },
-	{ name = "Radiant", color = C(255, 255, 180), mat = Enum.Material.Neon, glow = true },
-	{ name = "Red Seer", color = C(255, 40, 40), mat = Enum.Material.Neon },
-	{ name = "Seer", color = C(255, 120, 120), mat = Enum.Material.Neon },
-	{ name = "Snowflake", color = C(200, 240, 255), mat = Enum.Material.Ice, glow = true },
-	{ name = "Tides", color = C(0, 160, 255), mat = Enum.Material.Neon },
-	{ name = "Viper", color = C(60, 255, 60), mat = Enum.Material.Neon },
-	{ name = "Xeno", color = C(160, 255, 120), mat = Enum.Material.Neon, glow = true },
+	{ name = "Corrupt", color = C(90, 255, 60), mat = Enum.Material.Neon, glow = true },
 	{ name = "Candy", color = C(255, 120, 180), mat = Enum.Material.Neon },
-	{ name = "Gingerblade", color = C(200, 100, 40), mat = Enum.Material.Wood },
-	{ name = "Jingle", color = C(220, 40, 40), mat = Enum.Material.Neon },
 }
 
 ZX.gunSkins = {
-	{ name = "Default", color = nil },
-	{ name = "Chroma Darkbringer", color = C(150, 80, 255), mat = Enum.Material.Neon, glow = true },
+	{ name = "Default" },
 	{ name = "Darkbringer", color = C(90, 0, 140), mat = Enum.Material.Neon, glow = true },
 	{ name = "Elderwood Revolver", color = C(70, 180, 100), mat = Enum.Material.Grass, glow = true },
 	{ name = "Amerilaser", color = C(255, 0, 0), mat = Enum.Material.Neon, glow = true },
 	{ name = "Blaster", color = C(180, 200, 255), mat = Enum.Material.Neon },
 	{ name = "Laser", color = C(255, 0, 60), mat = Enum.Material.Neon, glow = true },
-	{ name = "Luger", color = C(200, 200, 210), mat = Enum.Material.Metal },
 	{ name = "Mint", color = C(120, 255, 200), mat = Enum.Material.Neon },
-	{ name = "Pixel", color = C(255, 60, 60), mat = Enum.Material.SmoothPlastic },
-	{ name = "Predator", color = C(40, 120, 80), mat = Enum.Material.Metal },
-	{ name = "Reptile", color = C(60, 180, 90), mat = Enum.Material.Neon },
-	{ name = "Shark", color = C(80, 140, 200), mat = Enum.Material.Metal },
 	{ name = "Ghost", color = C(220, 255, 255), mat = Enum.Material.ForceField, glow = true },
 	{ name = "Golden", color = C(255, 210, 60), mat = Enum.Material.Neon, glow = true },
-	{ name = "Frostbite", color = C(90, 180, 255), mat = Enum.Material.Neon, glow = true },
-	{ name = "Iceblaster", color = C(120, 200, 255), mat = Enum.Material.Ice, glow = true },
-	{ name = "Nightfire", color = C(120, 40, 200), mat = Enum.Material.Neon },
-	{ name = "Phantom", color = C(160, 160, 200), mat = Enum.Material.ForceField },
-	{ name = "Radiant", color = C(255, 255, 180), mat = Enum.Material.Neon, glow = true },
-	{ name = "Spider", color = C(80, 80, 90), mat = Enum.Material.Metal },
-	{ name = "Xeno", color = C(160, 255, 120), mat = Enum.Material.Neon, glow = true },
 	{ name = "Corrupt", color = C(90, 255, 60), mat = Enum.Material.Neon, glow = true },
 	{ name = "Candy", color = C(255, 120, 180), mat = Enum.Material.Neon },
-	{ name = "Jingle", color = C(220, 40, 40), mat = Enum.Material.Neon },
 }
 
 local knifeNames = {}
@@ -5881,15 +5940,6 @@ for _, s in ipairs(ZX.knifeSkins) do table.insert(knifeNames, s.name) end
 local gunNames = {}
 for _, s in ipairs(ZX.gunSkins) do table.insert(gunNames, s.name) end
 
--- ---------------------------------------------------------------
--- 3) SİLAH & KOSTÜM YÖNETİCİSİ
--- ---------------------------------------------------------------
-local function findHandle(tool)
-	local h = tool:FindFirstChild("Handle")
-	if h and h:IsA("BasePart") then return h end
-	return tool:FindFirstChildWhichIsA("BasePart", true)
-end
-
 local function weaponKind(tool)
 	if not tool or not tool:IsA("Tool") then return nil end
 	local n = tool.Name:lower()
@@ -5897,325 +5947,405 @@ local function weaponKind(tool)
 	if n:find("gun") or n:find("revolver") or n:find("sheriff") then return "gun" end
 	return nil
 end
-
 ZX.weaponKind = weaponKind
 
+-- ---------------------------------------------------------------
+-- 3) KOSTÜM & SİLAH MAVİ TRAIL SİSTEMİ
+-- ---------------------------------------------------------------
 ZX.applyWeaponSkin = function(tool)
 	local kind = weaponKind(tool)
 	if not kind then return end
-	local handle = findHandle(tool)
-	if not handle then return end
 
-	if not ZX.orig[tool] then
-		local mesh = handle:FindFirstChildOfClass("SpecialMesh")
-		ZX.orig[tool] = {
-			color = handle.Color,
-			material = handle.Material,
-			size = handle.Size,
-			meshId = mesh and mesh.MeshId or nil,
-			textureId = mesh and mesh.TextureId or nil,
-			meshScale = mesh and mesh.Scale or nil,
-		}
-	end
-
-	local o = ZX.orig[tool]
 	local list = (kind == "knife") and ZX.knifeSkins or ZX.gunSkins
-	local sel = (kind == "knife") and ZX.skins.knife or ZX.skins.gun
+	local sel  = (kind == "knife") and ZX.skins.knife or ZX.skins.gun
 
 	local entry = list[1]
 	for _, e in ipairs(list) do
 		if e.name == sel then entry = e break end
 	end
 
-	local mesh = handle:FindFirstChildOfClass("SpecialMesh")
-	local oldTrail = handle:FindFirstChild("ZXSkinTrail")
-
-	if entry.color == nil then
-		handle.Color = o.color
-		handle.Material = o.material
-		handle.Size = o.size
-		if mesh then
-			if o.meshId then mesh.MeshId = o.meshId end
-			if o.textureId then mesh.TextureId = o.textureId end
-			if o.meshScale then mesh.Scale = o.meshScale end
+	if not ZX.orig[tool] then
+		ZX.orig[tool] = {}
+		for _, part in ipairs(tool:GetDescendants()) do
+			if part:IsA("BasePart") then
+				local mesh = part:FindFirstChildOfClass("SpecialMesh")
+				ZX.orig[tool][part] = {
+					color        = part.Color,
+					material     = part.Material,
+					transparency = part.Transparency,
+					texture      = part:IsA("MeshPart") and part.TextureID or (mesh and mesh.TextureId or nil),
+					vertexColor  = mesh and mesh.VertexColor or nil,
+				}
+			elseif part:IsA("Decal") then
+				ZX.orig[tool][part] = {
+					transparency = part.Transparency,
+				}
+			end
 		end
-		if oldTrail then oldTrail:Destroy() end
+	end
+
+	local oldTrail = tool:FindFirstChild("ZXSkinTrail", true)
+	if oldTrail then oldTrail:Destroy() end
+
+	if (not ZX.skins.enabled) or entry.color == nil then
+		for part, info in pairs(ZX.orig[tool] or {}) do
+			if part and part.Parent then
+				pcall(function()
+					part.Color        = info.color or part.Color
+					part.Material     = info.material or part.Material
+					part.Transparency = info.transparency or 0
+					if part:IsA("MeshPart") and info.texture then part.TextureID = info.texture end
+					local mesh = part:FindFirstChildOfClass("SpecialMesh")
+					if mesh then
+						if info.texture then mesh.TextureId = info.texture end
+						if info.vertexColor then mesh.VertexColor = info.vertexColor end
+					end
+				end)
+			end
+		end
 		return
 	end
 
-	handle.Color = entry.color
-	handle.Material = entry.mat or Enum.Material.Neon
-	if mesh and o.meshScale then
-		mesh.Scale = o.meshScale * (entry.scale or 1)
+	for _, part in ipairs(tool:GetDescendants()) do
+		if part:IsA("BasePart") then
+			pcall(function()
+				if part:IsA("MeshPart") then part.TextureID = "" end
+				local mesh = part:FindFirstChildOfClass("SpecialMesh")
+				if mesh then
+					mesh.TextureId   = ""
+					mesh.VertexColor = Vector3.new(1, 1, 1)
+				end
+				part.Color    = entry.color
+				part.Material = entry.mat or Enum.Material.Neon
+			end)
+		elseif part:IsA("Decal") then
+			pcall(function()
+				part.Transparency = 1
+			end)
+		end
 	end
 
-	if oldTrail then oldTrail:Destroy() end
-	if entry.glow then
-		local a0 = Instance.new("Attachment")
-		a0.Position = Vector3.new(0, 0.45, 0)
+	local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart")
+	if handle and entry.glow then
+		local a0 = handle:FindFirstChild("ZXSkinAtt0") or Instance.new("Attachment")
+		a0.Name = "ZXSkinAtt0"
+		a0.Position = Vector3.new(0, 0.5, 0)
 		a0.Parent = handle
-		local a1 = Instance.new("Attachment")
-		a1.Position = Vector3.new(0, -0.45, 0)
+		local a1 = handle:FindFirstChild("ZXSkinAtt1") or Instance.new("Attachment")
+		a1.Name = "ZXSkinAtt1"
+		a1.Position = Vector3.new(0, -0.5, 0)
 		a1.Parent = handle
 		local tr = Instance.new("Trail")
 		tr.Name = "ZXSkinTrail"
-		tr.Attachment0 = a0
-		tr.Attachment1 = a1
-		tr.Color = ColorSequence.new(entry.color)
-		tr.Transparency = NumberSequence.new(0.4)
-		tr.Lifetime = 0.22
+		tr.Attachment0   = a0
+		tr.Attachment1   = a1
+		tr.Color         = ColorSequence.new(entry.color)
+		tr.Transparency  = NumberSequence.new(0.2)
+		tr.Lifetime      = 0.25
 		tr.LightEmission = 1
-		tr.Parent = handle
+		tr.Parent        = handle
+	end
+end
+
+local function updateWeaponBlueTrail(tool)
+	local handle = tool and (tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart"))
+	if not handle then return end
+
+	local existing = handle:FindFirstChild("ZXBlueWeaponTrail")
+	if not ZX.tracer.enabled then
+		if existing then existing:Destroy() end
+		return
+	end
+
+	if not existing then
+		local a0 = handle:FindFirstChild("ZXTrailAtt0") or Instance.new("Attachment")
+		a0.Name = "ZXTrailAtt0"
+		a0.Position = Vector3.new(0, 0.7, 0)
+		a0.Parent = handle
+
+		local a1 = handle:FindFirstChild("ZXTrailAtt1") or Instance.new("Attachment")
+		a1.Name = "ZXTrailAtt1"
+		a1.Position = Vector3.new(0, -0.7, 0)
+		a1.Parent = handle
+
+		local tr = Instance.new("Trail")
+		tr.Name = "ZXBlueWeaponTrail"
+		tr.Attachment0   = a0
+		tr.Attachment1   = a1
+		tr.Color         = ColorSequence.new(Color3.fromRGB(0, 190, 255))
+		tr.Transparency  = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.1),
+			NumberSequenceKeypoint.new(1, 1)
+		})
+		tr.Lifetime      = 0.35
+		tr.LightEmission = 1
+		tr.Parent        = handle
 	end
 end
 
 -- ---------------------------------------------------------------
--- 4) BULLET TRACER (NEON ÇİZGİ — DUVARDA DURUR, GEÇMEZ)
+-- 4) HASSAS HEDEF TAHMİNİ (ZIG-ZAG & JUMPER VURMA)
 -- ---------------------------------------------------------------
-;(function()
-	local DrawingLib = rawget(_G, "Drawing")
+local function calculatePrecisionAim(targetPlr)
+	if not targetPlr or not targetPlr.Character then return nil end
+	local tChar = targetPlr.Character
+	local tRoot = tChar:FindFirstChild("HumanoidRootPart")
+	local tTorso = tChar:FindFirstChild("UpperTorso") or tChar:FindFirstChild("Torso") or tRoot
+	if not tTorso then return nil end
 
-	local function screenRay()
-		local cam = Workspace.CurrentCamera
-		if not cam then return nil end
-		local vp = cam.ViewportSize
-		local x, y
-		if UserInputService.MouseEnabled then
-			local m = UserInputService:GetMouseLocation()
-			x, y = m.X, m.Y
-		else
-			x, y = vp.X / 2, vp.Y / 2
+	local torsoPos = tTorso.Position
+	local vel = (tRoot and (tRoot.AssemblyLinearVelocity or tRoot.Velocity)) or Vector3.zero
+	local horizVel = Vector3.new(vel.X, 0, vel.Z)
+	local speed = horizVel.Magnitude
+
+	if speed < 1.2 then
+		return torsoPos
+	end
+
+	local moveDir = horizVel.Unit
+	local leadDist = math.clamp(speed * 0.075, 0.4, 2.0)
+	local aimPos = torsoPos + (moveDir * leadDist)
+
+	if math.abs(vel.Y) > 2 then
+		aimPos = Vector3.new(aimPos.X, torsoPos.Y + math.clamp(vel.Y * 0.05, -1.5, 1.5), aimPos.Z)
+	end
+
+	return aimPos
+end
+
+-- ---------------------------------------------------------------
+-- 5) BULLET TRACER (3D Neon - Tam El/Namludan Hedefe)
+-- ---------------------------------------------------------------
+ZX.createNeonTracer = function(gunTool, targetPosition)
+	local char = player.Character
+	if not char or not targetPosition then return end
+
+	local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+	local hrp  = char:FindFirstChild("HumanoidRootPart")
+
+	-- NISAN DUZELTMESI: tracer namlu ucundan cikar. Eski kod el pozisyonunu
+	-- kullanıyordu, namlu elden yukarida oldugu icin cizgi mermi hizasinin
+	-- altinda gorunuyordu. Handle'in -Z yonu namlu yonudur (ZXMuzzleAtt ile ayni hat).
+	local origin = nil
+	if gunTool then
+		local handle = gunTool:FindFirstChild("Handle") or gunTool:FindFirstChildWhichIsA("BasePart")
+		if handle and handle:IsA("BasePart") then
+			origin = (handle.CFrame * CFrame.new(0, 0, -(handle.Size.Z * 0.5 + 0.3))).Position
 		end
-		return cam:ScreenPointToRay(x, y)
 	end
-
-	local function spawnDrawingLine(fromPos, toPos, color, thickness, dur)
-		local ok, line = pcall(function() return DrawingLib.new("Line") end)
-		if not ok or not line then return false end
-		line.Thickness = thickness
-		line.Color = color
-		line.Transparency = 0.05
-		task.spawn(function()
-			local t0 = os.clock()
-			while true do
-				local cam = Workspace.CurrentCamera
-				if not cam then break end
-				local a, onA = cam:WorldToViewportPoint(fromPos)
-				local b, onB = cam:WorldToViewportPoint(toPos)
-				if onA and onB and a.Z > 0 and b.Z > 0 then
-					line.Visible = true
-					line.From = Vector2.new(a.X, a.Y)
-					line.To = Vector2.new(b.X, b.Y)
-				else
-					line.Visible = false
-				end
-				local p = (os.clock() - t0) / dur
-				if p >= 1 then break end
-				line.Transparency = math.clamp(p, 0, 1)
-				task.wait()
-			end
-			pcall(function() line:Remove() end)
-		end)
-		return true
+	if not origin then
+		origin = hand and hand.Position or (hrp and hrp.Position + Vector3.new(0, 1.5, 0))
 	end
+	if not origin then return end
 
-	local function spawnFrameLine(fromPos, toPos, color, thickness, dur)
-		local cam = Workspace.CurrentCamera
-		if not cam then return end
-		local line = Instance.new("Frame")
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.BorderSizePixel = 0
-		line.BackgroundColor3 = color
-		line.BackgroundTransparency = 0.05
-		line.ZIndex = 99999
-		line.Parent = (espDrawingGui or menuGui)
+	local dist = (targetPosition - origin).Magnitude
+	if dist <= 0.8 then return end
 
-		task.spawn(function()
-			local t0 = os.clock()
-			while true do
-				local c = Workspace.CurrentCamera
-				if not c then break end
-				local a, onA = c:WorldToViewportPoint(fromPos)
-				local b, onB = c:WorldToViewportPoint(toPos)
-				local p = (os.clock() - t0) / dur
-				if onA and onB and a.Z > 0 and b.Z > 0 then
-					local ax, ay = a.X, a.Y
-					local bx, by = b.X, b.Y
-					local dist = math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay))
-					line.Visible = true
-					line.Size = UDim2.new(0, dist, 0, thickness)
-					line.Position = UDim2.new(0, (ax + bx) / 2, 0, (ay + by) / 2)
-					line.Rotation = math.deg(math.atan2(by - ay, bx - ax))
-				else
-					line.Visible = false
-				end
-				if p >= 1 then break end
-				line.BackgroundTransparency = math.clamp(p, 0, 1)
-				RunService.RenderStepped:Wait()
-			end
-			line:Destroy()
-		end)
-	end
+	local beam = Instance.new("Part")
+	beam.Name        = "ZXNeonTracer"
+	beam.Material    = Enum.Material.Neon
+	beam.Color       = ZX.tracer.color
+	beam.CastShadow  = false
+	beam.Anchored    = true
+	beam.CanCollide  = false
+	beam.CanQuery    = false
+	beam.CanTouch    = false
 
-	ZX.spawnLine = function(fromPos, toPos, color, thickness, dur)
-		if DrawingLib and DrawingLib.new then
-			if spawnDrawingLine(fromPos, toPos, color, thickness, dur) then return end
+	local thick = math.clamp(ZX.tracer.thickness * 0.05, 0.05, 0.6)
+	beam.Size   = Vector3.new(thick, thick, dist)
+	beam.CFrame = CFrame.lookAt(origin:Lerp(targetPosition, 0.5), targetPosition)
+	beam.Parent = Workspace
+
+	task.spawn(function()
+		local t0  = tick()
+		local dur = math.max(0.1, ZX.tracer.duration)
+		while true do
+			local elapsed = tick() - t0
+			if elapsed >= dur then break end
+			beam.Transparency = elapsed / dur
+			RunService.RenderStepped:Wait()
 		end
-		spawnFrameLine(fromPos, toPos, color, thickness, dur)
-	end
+		beam:Destroy()
+	end)
+end
 
-	ZX.trace = function()
-		if not ZX.tracer.enabled then return end
-		local ray = screenRay()
-		if not ray then return end
+-- ---------------------------------------------------------------
+-- 6) SPIN ITEMS & NAMLU DUMANI
+-- ---------------------------------------------------------------
+do
+	local function findRightGrip()
 		local char = player.Character
-		if not char then return end
-		local root = char:FindFirstChild("HumanoidRootPart")
+		if not char then return nil, nil end
 		local tool = char:FindFirstChildOfClass("Tool")
-		local handle = tool and (tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart", true))
-		local origin = handle and (handle.Position + ray.Direction * 0.8) or (root and root.Position or ray.Origin)
-
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = { char }
-		params.IgnoreWater = true
-
-		local result = Workspace:Raycast(ray.Origin, ray.Direction * 1200, params)
-		local target = result and result.Position or (ray.Origin + ray.Direction * 1200)
-		ZX.spawnLine(origin, target, ZX.tracer.color, ZX.tracer.thickness, ZX.tracer.duration)
-	end
-end)()
-
--- ---------------------------------------------------------------
--- 5) SPIN ITEMS (SİLAH AŞAĞI 380°, KILIÇ SOLA DÖNÜŞ)
--- ---------------------------------------------------------------
-;(function()
-	local grip = nil
-	local baseC0 = nil
-	local gripTool = nil
-
-	local function resetGrip()
-		if grip and baseC0 then
-			pcall(function() grip.C0 = baseC0 end)
-		end
-		grip = nil
-		baseC0 = nil
-		gripTool = nil
-	end
-
-	local function findGrip(tool)
-		local char = player.Character
-		if not char then return nil end
-		local handle = tool:FindFirstChild("Handle")
-		local g = handle and handle:FindFirstChild("RightGrip")
+		if not tool then return nil, nil end
+		local h = tool:FindFirstChild("Handle")
+		local g = h and h:FindFirstChild("RightGrip")
 		if not g then
-			local arm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
+			local arm = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
 			if arm then g = arm:FindFirstChild("RightGrip") end
 		end
-		return g
+		return g, tool
 	end
 
 	RunService.RenderStepped:Connect(function(dt)
-		if not ZX.spin.enabled then
-			if grip then resetGrip() end
+		if not ZX.spin.enabled then return end
+		local grip, tool = findRightGrip()
+		if not grip or not tool then return end
+		local kind = weaponKind(tool)
+		if not kind then return end
+
+		if not ZX.origGrip[grip] then ZX.origGrip[grip] = grip.C1 end
+		local baseC1 = ZX.origGrip[grip]
+
+		if ZX.spin.isFiring then
+			grip.C1 = baseC1
 			return
 		end
-		local char = player.Character
-		local tool = char and char:FindFirstChildOfClass("Tool")
-		if not tool then
-			resetGrip()
-			return
-		end
-		local kind = ZX.weaponKind and ZX.weaponKind(tool) or nil
-		if not kind then
-			resetGrip()
-			return
-		end
-		if gripTool ~= tool then
-			resetGrip()
-			local g = findGrip(tool)
-			if not g then return end
-			grip = g
-			baseC0 = g.C0
-			gripTool = tool
-			ZX.spin.angle = 0
-		end
-		if not grip or not grip.Parent then return end
 
 		ZX.spin.angle = (ZX.spin.angle + ZX.spin.speed * dt) % 360
 		local rad = math.rad(ZX.spin.angle)
 		if kind == "gun" then
-			grip.C0 = baseC0 * CFrame.Angles(rad, 0, 0)
+			grip.C1 = baseC1 * CFrame.Angles(rad, 0, 0)
 		else
-			grip.C0 = baseC0 * CFrame.Angles(0, -rad, 0)
+			grip.C1 = baseC1 * CFrame.Angles(0, -rad, 0)
 		end
 	end)
 
-	-- KAPANMAYAN NAMLU DUMANI
-	ZX.ensureSmoke = function(tool)
-		local kind = ZX.weaponKind and ZX.weaponKind(tool) or nil
-		if kind ~= "gun" then return end
+	ZX.emitMuzzleSmoke = function(tool)
 		local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart", true)
 		if not handle then return end
-		if handle:FindFirstChild("ZXMuzzle") then return end
-
-		local att = Instance.new("Attachment")
-		att.Name = "ZXMuzzle"
-		att.Position = Vector3.new(0, 0, -1.1)
-		att.Parent = handle
-
-		local pe = Instance.new("ParticleEmitter")
-		pe.Texture = "rbxasset://textures/particles/smoke_main.dds"
-		pe.Rate = 0
-		pe.Lifetime = NumberRange.new(0.7, 1.3)
-		pe.Speed = NumberRange.new(1.2, 2.4)
-		pe.SpreadAngle = Vector2.new(14, 14)
-		pe.Acceleration = Vector3.new(0, 3.2, 0)
-		pe.Drag = 2.5
-		pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 1.6) })
-		pe.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.25), NumberSequenceKeypoint.new(1, 1) })
-		pe.Color = ColorSequence.new(Color3.fromRGB(200, 200, 200))
-		pe.LightEmission = 0.2
-		pe.LightInfluence = 0.6
-		pe.Rotation = NumberRange.new(0, 360)
-		pe.RotSpeed = NumberRange.new(-40, 40)
-		pe.Enabled = true
-		pe.Parent = att
+		local att = handle:FindFirstChild("ZXMuzzleAtt")
+		if not att then
+			att = Instance.new("Attachment")
+			att.Name     = "ZXMuzzleAtt"
+			att.Position = Vector3.new(0, 0, -1.2)
+			att.Parent   = handle
+			local pe = Instance.new("ParticleEmitter")
+			pe.Name        = "SmokeFX"
+			pe.Texture     = "rbxasset://textures/particles/smoke_main.dds"
+			pe.Rate        = 0
+			pe.Lifetime    = NumberRange.new(0.8, 1.4)
+			pe.Speed       = NumberRange.new(1.2, 2.5)
+			pe.SpreadAngle = Vector2.new(15, 15)
+			pe.Acceleration = Vector3.new(0, 3.5, 0)
+			pe.Drag        = 2.5
+			pe.Size        = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1.8) })
+			pe.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+			pe.Color       = ColorSequence.new(Color3.fromRGB(220, 220, 220))
+			pe.LightEmission = 0.1
+			pe.Parent      = att
+		end
+		local pe = att:FindFirstChild("SmokeFX")
+		if pe then pe:Emit(8) end
 	end
-
-	ZX.emitSmoke = function(tool)
-		local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart", true)
-		local att = handle and handle:FindFirstChild("ZXMuzzle")
-		local pe = att and att:FindFirstChildOfClass("ParticleEmitter")
-		if pe then pe:Emit(7) end
-	end
-end)()
+end
 
 -- ---------------------------------------------------------------
--- 6) ATEŞ ALGILAMA — TRACER + SMOKE + WALLBANG
+-- 7) DUVAR ARKASI KESİN VURUŞ (WALLBANG MICRO-TELEPORT)
 -- ---------------------------------------------------------------
-;(function()
-	local function onShot(tool)
-		local kind = ZX.weaponKind and ZX.weaponKind(tool) or nil
-		if kind ~= "gun" then return end
+local function checkWallBetween(p1, p2, ignoreChar, targetChar)
+	local dir = p2 - p1
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { ignoreChar }
+	params.IgnoreWater = true
+	params.RespectCanCollide = true
+	local res = Workspace:Raycast(p1, dir, params)
+	if res and res.Instance and not res.Instance:IsDescendantOf(targetChar) then
+		return true
+	end
+	return false
+end
 
-		if ZX.tracer.enabled then pcall(ZX.trace) end
-		pcall(ZX.emitSmoke, tool)
+local function executeDirectShot(gunTool)
+	local murderer = getMurdererPlayer and getMurdererPlayer()
+	if not murderer or not murderer.Character then return false end
 
-		if ZX.wallbang.enabled then
-			local murderer = getMurdererPlayer()
+	local aimPos = calculatePrecisionAim(murderer)
+	if not aimPos then return false end
+
+	local shootRemote, remoteType = getShootRemote(gunTool)
+	if not shootRemote then return false end
+
+	isShooting = true
+	currentAimTorsoPos = aimPos
+	ZX.spin.isFiring = true
+
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local oldCF = root and root.CFrame or nil
+
+	local mRoot = murderer.Character:FindFirstChild("HumanoidRootPart") or murderer.Character:FindFirstChild("UpperTorso")
+	local isWall = root and mRoot and checkWallBetween(root.Position, mRoot.Position, char, murderer.Character)
+
+	local wallShot = (ZX.wallbang.enabled or wallbangEnabled) and true or false
+	-- ISINLAMA TAMAMEN KALDIRILDI: internetteki standart MM2 wallbang yontemi —
+	-- MM2 CreateBeam sunucusu client'in gonderdigi nisan noktasina guvenir,
+	-- kursun kendi konumumuzdan duvarin icinden gecer. Eski kod bizi katila
+	-- isinliyordu; artik hicbir yere tasınmiyoruz.
+	if root then
+		pcall(function()
+			root.CFrame = CFrame.new(root.Position, Vector3.new(aimPos.X, root.Position.Y, aimPos.Z))
+			root.AssemblyAngularVelocity = Vector3.zero
+		end)
+	end
+
+	for grip, baseC1 in pairs(ZX.origGrip) do
+		if grip and grip.Parent then pcall(function() grip.C1 = baseC1 end) end
+	end
+
+	if remoteType == "CreateBeam" then
+		pcall(function() shootRemote:InvokeServer(1, aimPos, "AH2") end)
+		if wallShot then
+			task.wait(0.05)
+			local freshAim = calculatePrecisionAim(murderer) or aimPos
+			pcall(function() shootRemote:InvokeServer(1, freshAim, "AH2") end)
+		end
+	elseif remoteType == "ShootEvent" then
+		local hand = char and (char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") or root)
+		pcall(function() shootRemote:FireServer(CFrame.new(hand.Position), CFrame.new(aimPos)) end)
+		if wallShot then
+			task.wait(0.05)
+			local freshAim = calculatePrecisionAim(murderer) or aimPos
+			pcall(function() shootRemote:FireServer(CFrame.new(hand.Position), CFrame.new(freshAim)) end)
+		end
+	end
+
+	if ZX.tracer.enabled then
+		ZX.createNeonTracer(gunTool, aimPos)
+	end
+
+	task.delay(0.12, function()
+		ZX.spin.isFiring = false
+		isShooting = false
+		currentAimTorsoPos = nil
+	end)
+	return true
+end
+
+-- Tool Hook
+do
+	local function onGunActivated(tool)
+		if weaponKind(tool) ~= "gun" then return end
+		pcall(ZX.emitMuzzleSmoke, tool)
+
+		if ZX.wallbang.enabled or wallbangEnabled then
+			local hitSuccess = executeDirectShot(tool)
+			if hitSuccess then return end
+		end
+
+		if ZX.tracer.enabled then
 			local cam = Workspace.CurrentCamera
-			if murderer and murderer.Character and cam then
-				local t = murderer.Character:FindFirstChild("UpperTorso")
-					or murderer.Character:FindFirstChild("Torso")
-					or murderer.Character:FindFirstChild("HumanoidRootPart")
-				if t then
-					local dir = t.Position - cam.CFrame.Position
-					if dir.Magnitude > 0.01 and cam.CFrame.LookVector:Dot(dir.Unit) > 0.86 then
-						wallbangEnabled = true
-						if not isShooting then task.spawn(triggerShootMurderer) end
-					end
-				end
+			if cam then
+				local ray = cam:ViewportPointToRay(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+				local char = player.Character
+				local params = RaycastParams.new()
+				params.FilterType = Enum.RaycastFilterType.Exclude
+				params.FilterDescendantsInstances = { char }
+				params.IgnoreWater = true
+				local hit = Workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+				local targetPos = hit and hit.Position or (ray.Origin + ray.Direction * 1000)
+				ZX.createNeonTracer(tool, targetPos)
 			end
 		end
 	end
@@ -6224,21 +6354,25 @@ end)()
 		if not tool or not tool:IsA("Tool") then return end
 		if ZX.hooked[tool] then return end
 		ZX.hooked[tool] = true
+
 		pcall(ZX.applyWeaponSkin, tool)
-		pcall(ZX.ensureSmoke, tool)
+		pcall(updateWeaponBlueTrail, tool)
+
 		tool.Activated:Connect(function()
-			if ZX.applyWeaponSkin then pcall(ZX.applyWeaponSkin, tool) end
-			onShot(tool)
+			pcall(ZX.applyWeaponSkin, tool)
+			pcall(updateWeaponBlueTrail, tool)
+			onGunActivated(tool)
 		end)
 		tool.Equipped:Connect(function()
-			if ZX.applyWeaponSkin then pcall(ZX.applyWeaponSkin, tool) end
-			if ZX.ensureSmoke then pcall(ZX.ensureSmoke, tool) end
+			pcall(ZX.applyWeaponSkin, tool)
+			pcall(updateWeaponBlueTrail, tool)
 		end)
-		tool.AncestryChanged:Connect(function()
-			if not tool:IsDescendantOf(game) then ZX.hooked[tool] = nil end
+		tool.Unequipped:Connect(function()
+			for grip, baseC1 in pairs(ZX.origGrip) do
+				if grip and grip.Parent then pcall(function() grip.C1 = baseC1 end) end
+			end
 		end)
 	end
-	ZX.hookTool = hookTool
 
 	task.spawn(function()
 		while true do
@@ -6254,163 +6388,172 @@ end)()
 					if t:IsA("Tool") then hookTool(t) end
 				end
 			end
-			task.wait(0.8)
+			task.wait(0.7)
 		end
 	end)
-end)()
+end
 
 -- ---------------------------------------------------------------
--- 7) KUTU ESP (COIN & DROPPED GUN)
+-- 8) HITBOX SIFIRLAMA GÜVENCESİ (Görünmez Blok Kalmasını Önler)
 -- ---------------------------------------------------------------
-;(function()
+RunService.Heartbeat:Connect(function()
+	if not hitboxEnabled then
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player and p.Character then
+				local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+				if hrp and hrp.Size.X > 3 then
+					hrp.Size = Vector3.new(2, 2, 1)
+					hrp.Transparency = 1
+					hrp.CanCollide = false
+				end
+				local ut = p.Character:FindFirstChild("UpperTorso")
+				if ut and ut.Size.X > 3 then
+					ut.Size = Vector3.new(1.6, 1.6, 1)
+					ut.Transparency = 0
+					ut.CanCollide = false
+				end
+				local t = p.Character:FindFirstChild("Torso")
+				if t and t.Size.X > 3 then
+					t.Size = Vector3.new(2, 2, 1)
+					t.Transparency = 0
+					t.CanCollide = false
+				end
+			end
+		end
+	end
+end)
+
+-- ---------------------------------------------------------------
+-- 9) DROPPED GUN & COIN KUTU ESP
+-- ---------------------------------------------------------------
+do
 	local entries = {}
 
 	local function clearAll()
 		for _, e in pairs(entries) do
 			pcall(function() e.box:Destroy() end)
-			pcall(function() e.bb:Destroy() end)
+			pcall(function() e.bb:Destroy()  end)
 		end
 		entries = {}
 	end
 
 	local function addBox(part, color, text)
-		if not part or not part.Parent then return end
-		if entries[part] then return end
+		if not part or not part.Parent or entries[part] then return end
 		local box = Instance.new("SelectionBox")
-		box.Adornee = part
-		box.Color3 = color
-		box.LineThickness = 0.06
+		box.Adornee             = part
+		box.Color3              = color
+		box.LineThickness       = 0.07
 		box.SurfaceTransparency = 1
-		box.Transparency = 0.15
-		box.Parent = (espDrawingGui or menuGui)
+		box.Transparency        = 0.1
+		box.Parent              = (espDrawingGui or game:GetService("CoreGui"))
 
 		local bb = Instance.new("BillboardGui")
-		bb.Size = UDim2.new(0, 120, 0, 18)
-		bb.StudsOffset = Vector3.new(0, 1.6, 0)
-		bb.AlwaysOnTop = true
-		bb.Adornee = part
-		bb.Parent = (espDrawingGui or menuGui)
+		bb.Size         = UDim2.new(0, 130, 0, 20)
+		bb.StudsOffset  = Vector3.new(0, 1.8, 0)
+		bb.AlwaysOnTop  = true
+		bb.Adornee      = part
+		bb.Parent       = (espDrawingGui or game:GetService("CoreGui"))
 
 		local lbl = Instance.new("TextLabel")
-		lbl.Size = UDim2.new(1, 0, 1, 0)
+		lbl.Size                   = UDim2.new(1, 0, 1, 0)
 		lbl.BackgroundTransparency = 1
-		lbl.Font = Enum.Font.GothamBold
-		lbl.TextSize = 11
-		lbl.TextColor3 = color
-		lbl.TextStrokeTransparency = 0.35
-		lbl.Text = text
-		lbl.Parent = bb
+		lbl.Font                   = Enum.Font.GothamBold
+		lbl.TextSize               = 12
+		lbl.TextColor3             = color
+		lbl.TextStrokeTransparency = 0.2
+		lbl.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
+		lbl.Text                   = text
+		lbl.Parent                 = bb
 
 		entries[part] = { box = box, bb = bb }
 	end
 
-	local function refresh()
-		if not (ZX.box.coin or ZX.box.gun) then
-			clearAll()
-			return
-		end
-		local seen = {}
-		for _, d in ipairs(Workspace:GetDescendants()) do
-			if d:IsA("BasePart") then
-				local n = d.Name:lower()
-				if ZX.box.coin and n:find("coin") then
-					addBox(d, Color3.fromRGB(255, 215, 0), "COIN")
-					seen[d] = true
-				elseif ZX.box.gun and (n == "gundrop" or n:find("gundrop")) then
-					addBox(d, Color3.fromRGB(255, 230, 0), "Dropped Gun")
-					seen[d] = true
-				end
-			end
-		end
-		for part, e in pairs(entries) do
-			if not seen[part] or not part.Parent then
-				pcall(function() e.box:Destroy() end)
-				pcall(function() e.bb:Destroy() end)
-				entries[part] = nil
-			end
-		end
-	end
-
 	task.spawn(function()
 		while true do
-			pcall(refresh)
-			task.wait(0.9)
-		end
-	end)
-end)()
-
--- ---------------------------------------------------------------
--- 8) GAME TIMER
--- ---------------------------------------------------------------
-;(function()
-	local label = Instance.new("TextLabel")
-	label.Name = "ZXGameTimer"
-	label.Size = UDim2.new(0, 160, 0, 30)
-	label.Position = UDim2.new(0.5, -80, 0, 54)
-	label.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-	label.BackgroundTransparency = 0.25
-	label.BorderSizePixel = 0
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 14
-	label.TextColor3 = Color3.fromRGB(245, 245, 245)
-	label.Text = "LOBBY"
-	label.Visible = false
-	label.ZIndex = 99999
-	label.Parent = (menuGui or game:GetService("CoreGui"))
-
-	local lCorner = Instance.new("UICorner")
-	lCorner.CornerRadius = UDim.new(0, 6)
-	lCorner.Parent = label
-
-	local lStroke = Instance.new("UIStroke")
-	lStroke.Color = Color3.fromRGB(40, 40, 40)
-	lStroke.Thickness = 1
-	lStroke.Parent = label
-
-	local function inRound()
-		local char = player.Character
-		if char then
-			local t = char:FindFirstChildOfClass("Tool")
-			if t then return true end
-		end
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= player and p.Character then
-				local t = p.Character:FindFirstChildOfClass("Tool")
-				if t then
-					local n = t.Name:lower()
-					if n:find("knife") or n:find("gun") or n:find("revolver") or n:find("sheriff") then
-						return true
+			if not (ZX.box.coin or ZX.box.gun) then
+				clearAll()
+			else
+				local seen = {}
+				for _, d in ipairs(Workspace:GetDescendants()) do
+					if d:IsA("BasePart") then
+						local n = d.Name:lower()
+						if ZX.box.gun and (n == "gundrop" or n:find("gundrop")) then
+							addBox(d, Color3.fromRGB(255, 235, 0), "DROPPED GUN")
+							seen[d] = true
+						elseif ZX.box.coin and n:find("coin") then
+							addBox(d, Color3.fromRGB(255, 215, 0), "COIN")
+							seen[d] = true
+						end
+					end
+				end
+				for part, e in pairs(entries) do
+					if not seen[part] or not part.Parent then
+						pcall(function() e.box:Destroy() end)
+						pcall(function() e.bb:Destroy()  end)
+						entries[part] = nil
 					end
 				end
 			end
+			task.wait(0.8)
 		end
-		return false
+	end)
+end
+
+-- ---------------------------------------------------------------
+-- 10) GAME TIMER (MM2 Gerçek Kalan Süre veya LOBBY)
+-- ---------------------------------------------------------------
+do
+	local timerLabel = Instance.new("TextLabel")
+	timerLabel.Name                   = "ZXGameTimer"
+	timerLabel.Size                   = UDim2.new(0, 160, 0, 30)
+	timerLabel.Position               = UDim2.new(0.5, -80, 0, 52)
+	timerLabel.BackgroundColor3       = Color3.fromRGB(12, 12, 12)
+	timerLabel.BackgroundTransparency = 0.2
+	timerLabel.BorderSizePixel        = 0
+	timerLabel.Font                   = Enum.Font.GothamBold
+	timerLabel.TextSize               = 13
+	timerLabel.TextColor3             = Color3.fromRGB(240, 240, 240)
+	timerLabel.Text                   = "LOBBY"
+	timerLabel.Visible                = false
+	timerLabel.ZIndex                 = 99999
+	timerLabel.Parent                 = game:GetService("CoreGui")
+
+	local lc = Instance.new("UICorner") lc.CornerRadius = UDim.new(0, 6) lc.Parent = timerLabel
+	local ls = Instance.new("UIStroke") ls.Color = Color3.fromRGB(36, 36, 36) ls.Thickness = 1 ls.Parent = timerLabel
+
+	local function getRemainingTime()
+		local pgui = player:FindFirstChild("PlayerGui")
+		if not pgui then return nil end
+		for _, desc in ipairs(pgui:GetDescendants()) do
+			if desc:IsA("TextLabel") and desc.Visible and desc.Text:match("^%d+:%d%d$") and desc.Text ~= "00:00" then
+				return desc.Text
+			end
+		end
+		return nil
 	end
 
 	task.spawn(function()
 		while true do
-			label.Visible = ZX.timer.enabled
+			timerLabel.Visible = ZX.timer.enabled
 			if ZX.timer.enabled then
-				if inRound() then
-					if ZX.timer.start == 0 then ZX.timer.start = tick() end
-					local elapsed = math.max(0, math.floor(tick() - ZX.timer.start))
-					label.Text = string.format("%02d:%02d", math.floor(elapsed / 60), elapsed % 60)
-					label.TextColor3 = Color3.fromRGB(120, 255, 160)
+				local t = getRemainingTime()
+				if t then
+					timerLabel.Text       = t
+					timerLabel.TextColor3 = Color3.fromRGB(0, 255, 140)
 				else
-					ZX.timer.start = 0
-					label.Text = "LOBBY"
-					label.TextColor3 = Color3.fromRGB(200, 200, 200)
+					timerLabel.Text       = "LOBBY"
+					timerLabel.TextColor3 = Color3.fromRGB(190, 190, 190)
 				end
 			end
-			task.wait(0.25)
+			task.wait(0.3)
 		end
 	end)
-end)()
+end
 
 -- ---------------------------------------------------------------
--- 9) AUTO FARM (UNDERGROUND + INVISIBLE + COIN TOPLAMA)
+-- 11) AUTO FARM MOTORU (Coin & FE Invisible)
 -- ---------------------------------------------------------------
-;(function()
+do
 	local coins = {}
 
 	local function refreshCoins()
@@ -6428,9 +6571,7 @@ end)()
 		if state then
 			for _, d in ipairs(char:GetDescendants()) do
 				if d:IsA("BasePart") or d:IsA("Decal") then
-					if ZX.farm.saved[d] == nil then
-						ZX.farm.saved[d] = d.Transparency
-					end
+					if ZX.farm.saved[d] == nil then ZX.farm.saved[d] = d.Transparency end
 					d.Transparency = 1
 				end
 			end
@@ -6446,13 +6587,10 @@ end)()
 		ZX.farm.enabled = state
 		local char = player.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart")
-
 		if state then
 			ZX.farm.savedCF = root and root.CFrame or nil
-			ZX.farm.prevWB = wallbangEnabled
+			ZX.farm.prevWB  = wallbangEnabled
 			wallbangEnabled = true
-			ZX.box.coin = true
-			ZX.box.gun = true
 			if ZX.farm.hide then setInvisible(true) end
 
 			task.spawn(function()
@@ -6461,39 +6599,87 @@ end)()
 					local c = player.Character
 					local r = c and c:FindFirstChild("HumanoidRootPart")
 					local h = c and c:FindFirstChildOfClass("Humanoid")
-					if r and h and h.Health > 0 then
+					if not (r and h and h.Health > 0) then
+						task.wait(0.5)
+					else
 						if ZX.farm.hide then setInvisible(true) end
-						r.AssemblyLinearVelocity = Vector3.zero
+						if tick() - lastScan > 1.2 then refreshCoins() lastScan = tick() end
 
-						if tick() - lastScan > 1.1 then
-							refreshCoins()
-							lastScan = tick()
-						end
-
-						local best, bestD = nil, math.huge
+						-- UÇUŞ MODU: coinlere yavaşça uçulur, yaklaşınca touch ile toplanır.
+						-- Eski mantık uzaktan touch basıyordu; reach güvenliği onu
+						-- engelliyordu, bu yüzden farm çalışmıyordu.
+						local remaining = {}
 						for _, coin in ipairs(coins) do
 							if coin.Parent and coin:IsDescendantOf(Workspace) then
-								local d = (coin.Position - r.Position).Magnitude
-								if d < bestD then
-									best = coin
-									bestD = d
+								table.insert(remaining, coin)
+							end
+						end
+						table.sort(remaining, function(a, b)
+							local da = (a.Position - r.Position).Magnitude
+							local db = (b.Position - r.Position).Magnitude
+							return da < db
+						end)
+
+						for _, coin in ipairs(remaining) do
+							if not ZX.farm.enabled then break end
+							if coin.Parent and coin:IsDescendantOf(Workspace) then
+								local cc = player.Character
+								local rr = cc and cc:FindFirstChild("HumanoidRootPart")
+								local hh = cc and cc:FindFirstChildOfClass("Humanoid")
+								if rr and hh and hh.Health > 0 then
+									if ZX.farm.hide then setInvisible(true) end
+									rr.AssemblyLinearVelocity = Vector3.zero
+
+									local target = coin.Position + Vector3.new(0, 0.6, 0)
+									local touchReach = (ZX.move and ZX.move.maxTouchReach) or 8
+									local guard = 0
+									local dt = RunService.Heartbeat:Wait()
+									while ZX.farm.enabled and coin.Parent and coin:IsDescendantOf(Workspace) and guard < 600 do
+										guard = guard + 1
+										local cc2 = player.Character
+										local rr2 = cc2 and cc2:FindFirstChild("HumanoidRootPart")
+										local hh2 = cc2 and cc2:FindFirstChildOfClass("Humanoid")
+										if not (rr2 and hh2 and hh2.Health > 0) then break end
+										if ZX.farm.hide then setInvisible(true) end
+										rr2.AssemblyLinearVelocity = Vector3.zero
+
+										local dist = (target - rr2.Position).Magnitude
+										if dist <= touchReach then
+											pcall(function()
+												if firetouchinterest then
+													firetouchinterest(coin, rr2, 0)
+													firetouchinterest(coin, rr2, 1)
+												end
+											end)
+											rr2.CFrame = CFrame.new(target)
+											break
+										end
+
+										local flyStep = math.max(ZX.farm.flySpeed or 35, 5) * dt
+										local toGo = (target - rr2.Position)
+										if toGo.Magnitude <= flyStep then
+											rr2.CFrame = CFrame.new(target)
+										else
+											local u = toGo.Unit
+											rr2.CFrame = CFrame.lookAt(rr2.Position + u * flyStep, target)
+										end
+										dt = RunService.Heartbeat:Wait()
+									end
+									task.wait(ZX.farm.delay)
 								end
 							end
 						end
 
-						if best then
-							pcall(function()
-								if firetouchinterest then
-									firetouchinterest(best, r, 0)
-									firetouchinterest(best, r, 1)
-								end
-							end)
-							r.CFrame = CFrame.new(best.Position + Vector3.new(0, 1.2, 0))
-						else
-							r.CFrame = r.CFrame - Vector3.new(0, 9, 0)
+						-- tüm coinler bitince başladığın yere dön, yeni coin bekle
+						if ZX.farm.enabled then
+							local cc3 = player.Character
+							local rr3 = cc3 and cc3:FindFirstChild("HumanoidRootPart")
+							if rr3 and ZX.farm.savedCF then
+								pcall(function() rr3.CFrame = ZX.farm.savedCF end)
+							end
+							task.wait(1.0)
 						end
 					end
-					task.wait(0.09)
 				end
 			end)
 		else
@@ -6506,256 +6692,1561 @@ end)()
 			end
 		end
 	end
-end)()
+end
 
 -- ---------------------------------------------------------------
--- 10) WINDUI ARAYÜZ YÜKLEME & SEKMELER
+-- 11.5) AUTO TP DROP GUN & MAP DUPER (MM2)
 -- ---------------------------------------------------------------
-;(function()
-	local WindUI
-	do
-		local ok, res = pcall(function()
-			return loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
-		end)
-		if ok and res then
-			WindUI = res
-		else
-			pcall(function()
-				WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+do
+	-- AUTO TP DROP GUN: silah dustugu an otomatik isinlanma
+	ZX.autotp = { enabled = false, delay = 0.12 }
+	Workspace.DescendantAdded:Connect(function(obj)
+		if not ZX.autotp.enabled then return end
+		local n = obj.Name:lower()
+		if n == "gundrop" or n:find("gundrop") then
+			task.delay(ZX.autotp.delay, function()
+				if ZX.autotp.enabled then pcall(triggerTpGun) end
 			end)
 		end
+	end)
+
+	-- MAP DUPER: reset + teleport ile secilen haritaya surekli oy verir.
+	-- MM2 oylamasi lobideki gri panellere basarak yapilir; reset atinca
+	-- tekrar oy verilebildigi icin paneli bulup uzerine isinlanir.
+	ZX.mapdupe = {
+		enabled  = false,
+		selected = nil,
+		delay    = 0.3,
+		notifyMsg = nil,
+		maps     = { "Bank 2", "Biolab", "Factory", "Hospital 3", "Hotel 2", "House 2", "Mansion 2", "MilBase", "Office 3", "Police Station", "Research Facility", "Workplace" },
+	}
+
+	local function normName(s)
+		s = (s or ""):lower()
+		return s:gsub("[^%w]", "")
 	end
 
-	if not WindUI then
-		warn("[ZeroX] WindUI yuklenemedi!")
-		return
+		-- Oy panelini bul: adi/yazisi haritayi tasiyan part; "vote" adi geciyorsa oncelikli.
+	-- Tam ad ("bank2") bulunamazsa numarasiz taban ad ("bank") ile de bakar.
+	local function findVotePad(mapNorm, mapBase)
+		local voteWords = { "vote", "panel" }
+		local bestFull, anyLabelFull, anyPartFull, bestBase, anyLabelBase, anyPartBase
+		local count = 0
+		for _, inst in ipairs(Workspace:GetDescendants()) do
+			count = count + 1
+			if count > 12000 or bestFull then break end
+			local isPart = inst:IsA("BasePart")
+			local isText = inst:IsA("TextLabel") or inst:IsA("TextButton")
+			if isPart or isText then
+				local holder = isPart and inst or inst:FindFirstAncestorOfClass("BasePart")
+				if holder then
+					local hay = isPart and normName(inst.Name) or normName(inst.Text)
+					if hay ~= "" then
+						local tier = nil
+						if hay:find(mapNorm, 1, true) then
+							tier = "full"
+						elseif mapBase ~= "" and hay:find(mapBase, 1, true) then
+							tier = "base"
+						end
+						if tier then
+							local chain = holder.Name:lower()
+							local p = holder.Parent
+							local hops = 0
+							while p and p ~= Workspace and hops < 4 do
+								chain = chain .. " " .. p.Name:lower()
+								p = p.Parent
+								hops = hops + 1
+							end
+							local hasVote = false
+							for _, w in ipairs(voteWords) do
+								if chain:find(w, 1, true) then
+									hasVote = true
+									break
+								end
+							end
+							if tier == "full" then
+								if hasVote then bestFull = holder
+								elseif isText then anyLabelFull = anyLabelFull or holder
+								else anyPartFull = anyPartFull or holder end
+							else
+								if hasVote then bestBase = bestBase or holder
+								elseif isText then anyLabelBase = anyLabelBase or holder
+								else anyPartBase = anyPartBase or holder end
+							end
+						end
+					end
+				end
+			end
+		end
+		return bestFull or anyLabelFull or anyPartFull or bestBase or anyLabelBase or anyPartBase
 	end
+	ZX.startMapDupe = function(state)
+		ZX.mapdupe.enabled = state
+		if not state then return end
+		task.spawn(function()
+			local cycles = 0
+			while ZX.mapdupe.enabled and cycles < 200 do
+				cycles = cycles + 1
+				local mapLabel = ZX.mapdupe.selected
+				if not mapLabel then
+					ZX.mapdupe.notifyMsg = "Önce harita seç!"
+					break
+				end
 
-	local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+				local mapNorm = normName(mapLabel)
+				local mapBase = mapNorm:gsub("%d+$", "")
 
-	local Window = WindUI:CreateWindow({
-		Title = "ZeroX v1.0.1",
-		Author = "ZeroX",
-		Folder = "ZeroXHub",
-		Icon = "solar:shield-bold",
-		Theme = "Dark",
-		Transparent = true,
-		Resizable = true,
-		Size = isMobile and UDim2.fromOffset(480, 290) or UDim2.fromOffset(640, 440),
-		OpenButton = {
-			Title = "ZeroX v1.0.1",
-			CornerRadius = UDim.new(1, 0),
-			StrokeThickness = 2,
-			Enabled = true,
-			Draggable = true,
-		},
-		Topbar = {
-			Height = 44,
-			ButtonsType = "Default",
-		},
+				-- 1) ONCE paneli bul — reset atmadan. Panel yoksa oylama yok/bitti.
+				-- FIX: eski kod once reset atip sonra panel ariyordu; panel bulunamayinca
+				-- reset atiyor, bulamayip tekrar reset atiyor ve orada kaliyordu.
+				local pad = nil
+				local scanWaited = 0
+				while ZX.mapdupe.enabled and scanWaited < 8 do
+					pad = findVotePad(mapNorm, mapBase)
+					if pad and pad.Parent then break end
+					task.wait(0.4)
+					scanWaited = scanWaited + 0.4
+				end
+				if not ZX.mapdupe.enabled then break end
+				if not (pad and pad.Parent) then
+					ZX.mapdupe.notifyMsg = "Oy paneli bulunamadı (oylama bitmiş olabilir). Dupe durdu."
+					break
+				end
+
+				-- 2) oy ver: panelin ustunde kal + touch spam (Touched oy kaydeder)
+				local voteEnd = os.clock() + math.max(ZX.mapdupe.delay or 0.3, 0.2)
+				while ZX.mapdupe.enabled and os.clock() < voteEnd do
+					pcall(function()
+						local char = player.Character
+						local r = char and char:FindFirstChild("HumanoidRootPart")
+						if r and pad.Parent then
+							r.CFrame = CFrame.new(pad.Position + Vector3.new(0, 1.2, 0))
+							if firetouchinterest then
+								firetouchinterest(pad, r, 0)
+								firetouchinterest(pad, r, 1)
+							end
+						end
+					end)
+					task.wait(0.05)
+				end
+				if not ZX.mapdupe.enabled then break end
+
+				-- 3) panel hala duruyor mu? (kaybolduysa oylama bitti)
+				task.wait(0.2)
+				local stillThere = findVotePad(mapNorm, mapBase)
+				if not (stillThere and stillThere.Parent) then
+					task.wait(0.6)
+					stillThere = findVotePad(mapNorm, mapBase)
+				end
+				if not (stillThere and stillThere.Parent) then
+					ZX.mapdupe.notifyMsg = "Oylama bitti, dupe durdu."
+					break
+				end
+
+				-- 4) RESET: tekrar oy vermek icin yeniden dog
+				local oldChar = player.Character
+				local hum = oldChar and oldChar:FindFirstChildOfClass("Humanoid")
+				if hum then
+					pcall(function() hum.Health = 0 end)
+					pcall(function() hum:ChangeState(Enum.HumanoidStateType.Dead) end)
+				end
+
+				local waited = 0
+				while ZX.mapdupe.enabled and waited < 10 do
+					task.wait(0.1)
+					waited = waited + 0.1
+					local nc = player.Character
+					local nr = nc and nc:FindFirstChild("HumanoidRootPart")
+					local nh = nc and nc:FindFirstChildOfClass("Humanoid")
+					if nr and nh and nh.Health > 0 and nc ~= oldChar then break end
+				end
+				if not ZX.mapdupe.enabled then break end
+				local nc2 = player.Character
+				local nh2 = nc2 and nc2:FindFirstChildOfClass("Humanoid")
+				if not (nc2 and nh2 and nh2.Health > 0) then
+					ZX.mapdupe.notifyMsg = "Respawn alınamadı, durdu."
+					break
+				end
+			end
+			ZX.mapdupe.enabled = false
+		end)
+	end
+	-- SHOOT MURDERER VE TÜM ATEŞLERDE TRACER: __namecall hook.
+	-- triggerShootMurderer main-chunk local'i, hub'dan baglanamadigi icin
+	-- CreateBeam/Shoot remote cagrilarini yakalayip tracer basiyoruz.
+	if getrawmetatable and setreadonly and getnamecallmethod then
+		pcall(function()
+			local mt = getrawmetatable(game)
+			setreadonly(mt, false)
+			local oldNamecall = mt.__namecall
+			local hookFn = function(self, ...)
+				local method = getnamecallmethod()
+				local args = { ... }
+				if method == "InvokeServer" or method == "FireServer" then
+					pcall(function()
+						if ZX.tracer.enabled and typeof(self) == "Instance"
+							and (self:IsA("RemoteFunction") or self:IsA("RemoteEvent")) then
+							local tool = self:FindFirstAncestorOfClass("Tool")
+							if tool and weaponKind(tool) == "gun" then
+								local target = nil
+								for i = 1, #args do
+									local a = args[i]
+									if typeof(a) == "Vector3" then
+										target = a
+									elseif typeof(a) == "CFrame" then
+										target = a.Position
+									end
+								end
+								if target then ZX.createNeonTracer(tool, target) end
+							end
+						end
+					end)
+				end
+				return oldNamecall(self, ...)
+			end
+			if newcclosure then hookFn = newcclosure(hookFn) end
+			mt.__namecall = hookFn
+			setreadonly(mt, true)
+		end)
+	end
+end
+
+-- ---------------------------------------------------------------
+-- 12) WINDUI KÜTÜPHANESİ YÜKLEME & PENCERE KURULUMU
+-- ---------------------------------------------------------------
+local WindUI
+do
+	local ok, res = pcall(function()
+		return loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+	end)
+	if ok and res then
+		WindUI = res
+	else
+		pcall(function()
+			WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+		end)
+	end
+end
+
+if not WindUI then
+	warn("[ZeroX] WindUI yuklenemedi!")
+	return
+end
+
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+local Window = WindUI:CreateWindow({
+	Title = "ZeroX v1.0.1",
+	Author = "ZeroX Hub",
+	Folder = "ZeroX",
+	Icon = "solar:shield-bold",
+	Theme = "Dark",
+	Transparent = true,
+	Resizable = true,
+	Size = isMobile and UDim2.fromOffset(480, 310) or UDim2.fromOffset(620, 430),
+	OpenButton = {
+		Title = "ZeroX",
+		CornerRadius = UDim.new(1, 0),
+		StrokeThickness = 2,
+		Enabled = true,
+		Draggable = true,
+		OnlyMobile = false,
+		Scale = 0.6,
+	},
+	Topbar = {
+		Height = 44,
+		ButtonsType = "Default",
+	},
+})
+
+-- Tuş ile aç/kapa
+pcall(function() Window:SetToggleKey(Enum.KeyCode.G) end)
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe or UserInputService:GetFocusedTextBox() then return end
+	if input.KeyCode == Enum.KeyCode.G or input.KeyCode == Enum.KeyCode.RightShift then
+		pcall(function() Window:Toggle() end)
+	end
+end)
+
+-- ---------------------------------------------------------------
+-- 13) SEKMELER (MAIN, COMBAT, VISUAL, TSB, SETTINGS)
+-- ---------------------------------------------------------------
+
+-- ===============================================================
+-- A) MAIN SEKMESİ (Genel Görsel & Karakter)
+-- ===============================================================
+local MainTab = Window:Tab({
+	Title = "Main",
+	Icon = "solar:home-2-bold",
+})
+
+local MainVisualSection = MainTab:Section({ Title = "Genel Görsel Modülleri" })
+
+MainVisualSection:Toggle({
+	Title = "Oyuncu ESP Genel",
+	Desc = "Tüm oyuncuları kutu ve çizgiyle gösterir",
+	Value = normalEspEnabled or false,
+	Callback = function(v)
+		normalEspEnabled = v
+		pcall(updateAllESP)
+	end,
+})
+
+MainVisualSection:Toggle({
+	Title = "FPS Optimizer",
+	Desc = "Gereksiz render efektlerini kapatır, FPS artırır",
+	Value = optimizerEnabled or false,
+	Callback = function(v)
+		pcall(function() toggleOptimizer(v) end)
+	end,
+})
+
+MainVisualSection:Toggle({
+	Title = "Custom FOV",
+	Desc = "Genişletilmiş kamera açısı",
+	Value = customFovEnabled or false,
+	Callback = function(v)
+		customFovEnabled = v
+	end,
+})
+
+MainVisualSection:Slider({
+	Title = "FOV Değeri",
+	Step = 1,
+	Value = { Min = 50, Max = 120, Default = customFovValue or 90 },
+	Callback = function(v)
+		customFovValue = v
+	end,
+})
+
+MainVisualSection:Toggle({
+	Title = "FullBright Aydınlatma",
+	Desc = "Haritadaki tüm karanlığı kaldırır",
+	Value = fullBrightEnabled or false,
+	Callback = function(v)
+		fullBrightEnabled = v
+		pcall(toggleFullBright, v)
+	end,
+})
+
+local MainCombatSection = MainTab:Section({ Title = "Karakter & Hareket" })
+
+MainCombatSection:Toggle({
+	Title = "Speed Glitch Bhop",
+	Desc = "Hızlı zıplama ve koşma",
+	Value = speedGlitchEnabled or false,
+	Callback = function(v)
+		speedGlitchEnabled = v
+	end,
+})
+
+MainCombatSection:Slider({
+	Title = "Zıplama Gücü",
+	Step = 1,
+	Value = { Min = 15, Max = 150, Default = speedGlitchPower or 45 },
+	Callback = function(v)
+		speedGlitchPower = v
+	end,
+})
+
+MainCombatSection:Toggle({
+	Title = "Wall Hop",
+	Desc = "Duvara yakınken havada zıplar (güç ve mesafe Combat sekmesinde)",
+	Value = false,
+	Callback = function(v)
+		ZX.move.wallhop = v
+		WindUI:Notify({
+			Title = "Wall Hop",
+			Content = v and "Aktif" or "Kapalı",
+			Duration = 2,
+		})
+	end,
+})
+
+MainCombatSection:Toggle({
+	Title = "Hitbox Expander Genel",
+	Desc = "Düşman hitboxlarını genişletir",
+	Value = hitboxEnabled or false,
+	Callback = function(v)
+		hitboxEnabled = v
+		pcall(updateAllHitboxes)
+	end,
+})
+
+MainCombatSection:Slider({
+	Title = "Hitbox Boyutu",
+	Step = 1,
+	Value = { Min = 2, Max = 40, Default = hitboxSize or 14 },
+	Callback = function(v)
+		hitboxSize = v
+		if hitboxEnabled then pcall(updateAllHitboxes) end
+	end,
+})
+
+MainCombatSection:Toggle({
+	Title = "Anti-Fling Koruması",
+	Desc = "Oyuncuların sizi savurmasını engeller",
+	Value = antiFlingEnabled or false,
+	Callback = function(v)
+		antiFlingEnabled = v
+	end,
+})
+
+MainCombatSection:Toggle({
+	Title = "ForceField Kalkanı FF",
+	Desc = "Koruyucu kalkan efekti",
+	Value = ffEnabled or false,
+	Callback = function(v)
+		ffEnabled = v
+	end,
+})
+
+MainCombatSection:Toggle({
+	Title = "SpinBot Fırlatmayan",
+	Desc = "Kendi etrafında hızlıca döner (vurmayı bozmaz)",
+	Value = spinBotEnabled or false,
+	Callback = function(v)
+		spinBotEnabled = v
+	end,
+})
+
+MainCombatSection:Slider({
+	Title = "SpinBot Hızı",
+	Step = 1,
+	Value = { Min = 5, Max = 100, Default = spinBotSpeed or 20 },
+	Callback = function(v)
+		spinBotSpeed = v
+	end,
+})
+
+MainCombatSection:Button({
+	Title = "R15 to R6 Resetli",
+	Desc = "Karakteri R6 olarak yeniden yükler",
+	Callback = function()
+		pcall(convertR15ToR6WithReset)
+	end,
+})
+
+-- ===============================================================
+-- B) COMBAT SEKMESİ (MM2 Dövüş & Wallbang & Auto Farm)
+-- ===============================================================
+local CombatTab = Window:Tab({
+	Title = "Combat",
+	Icon = "solar:sword-bold",
+})
+
+local MM2EspSection = CombatTab:Section({ Title = "MM2 Rol ESP" })
+
+MM2EspSection:Toggle({
+	Title = "MM2 Rol ESP Aktif",
+	Desc = "Katil ve Şerif rollerini renkli kutuyla gösterir",
+	Value = mm2EspEnabled or false,
+	Callback = function(v)
+		mm2EspEnabled = v
+		pcall(updateAllESP)
+	end,
+})
+
+MM2EspSection:Toggle({
+	Title = "Katil ESP",
+	Value = (mm2EspFlags and mm2EspFlags.MurdererESP) or true,
+	Callback = function(v)
+		if mm2EspFlags then mm2EspFlags.MurdererESP = v end
+		pcall(updateAllESP)
+	end,
+})
+
+MM2EspSection:Toggle({
+	Title = "Şerif ESP",
+	Value = (mm2EspFlags and mm2EspFlags.SheriffESP) or true,
+	Callback = function(v)
+		if mm2EspFlags then mm2EspFlags.SheriffESP = v end
+		pcall(updateAllESP)
+	end,
+})
+
+MM2EspSection:Toggle({
+	Title = "Masum ESP",
+	Value = (mm2EspFlags and mm2EspFlags.InnocentESP) or true,
+	Callback = function(v)
+		if mm2EspFlags then mm2EspFlags.InnocentESP = v end
+		pcall(updateAllESP)
+	end,
+})
+
+local MM2ActionSection = CombatTab:Section({ Title = "MM2 Aksiyonları & Vuruş" })
+
+MM2ActionSection:Button({
+	Title = "TP Drop Gun",
+	Desc = "Düşen silah varsa anında üstüne ışınlar",
+	Callback = function()
+		pcall(triggerTpGun)
+	end,
+})
+
+MM2ActionSection:Keybind({
+	Title = "TP Drop Gun Tuş Atama",
+	Value = "None",
+	Callback = function()
+		pcall(triggerTpGun)
+	end,
+})
+
+MM2ActionSection:Toggle({
+	Title = "Auto TP Drop Gun",
+	Desc = "Silah düştüğü an tuş gerekmeden otomatik ışınlanır",
+	Value = false,
+	Callback = function(v)
+		ZX.autotp.enabled = v
+	end,
+})
+
+MM2ActionSection:Button({
+	Title = "Vur",
+	Desc = "Katilin pozisyonuna doğrudan kurşun sıkar",
+	Callback = function()
+		pcall(triggerShootMurderer)
+	end,
+})
+
+MM2ActionSection:Keybind({
+	Title = "Shoot Murderer Tuş Atama",
+	Value = "None",
+	Callback = function()
+		pcall(triggerShootMurderer)
+	end,
+})
+
+MM2ActionSection:Toggle({
+	Title = "Wallbang Sadece Şerif",
+	Desc = "Duvar arkasından sıksan bile garantili katili vurur",
+	Value = true,
+	Callback = function(v)
+		ZX.wallbang.enabled = v
+		wallbangEnabled     = v
+	end,
+})
+
+MM2ActionSection:Keybind({
+	Title = "Wallbang Aç/Kapa Tuşu",
+	Value = "None",
+	Callback = function()
+		ZX.wallbang.enabled = not ZX.wallbang.enabled
+		wallbangEnabled     = ZX.wallbang.enabled
+		WindUI:Notify({
+			Title = "Wallbang",
+			Content = ZX.wallbang.enabled and "Aktif" or "Kapalı",
+			Duration = 2,
+		})
+	end,
+})
+
+MM2ActionSection:Button({
+	Title = "Fling Sheriff",
+	Callback = function()
+		pcall(triggerFlingSheriff)
+	end,
+})
+
+MM2ActionSection:Button({
+	Title = "Fling Murderer",
+	Callback = function()
+		pcall(triggerFlingMurderer)
+	end,
+})
+
+MM2ActionSection:Keybind({
+	Title = "Fling Sheriff Tuş Atama",
+	Value = "None",
+	Callback = function()
+		pcall(triggerFlingSheriff)
+	end,
+})
+
+MM2ActionSection:Keybind({
+	Title = "Fling Murderer Tuş Atama",
+	Value = "None",
+	Callback = function()
+		pcall(triggerFlingMurderer)
+	end,
+})
+
+local FarmSection = CombatTab:Section({ Title = "Auto Farm" })
+
+FarmSection:Toggle({
+	Title = "Auto Farm Coin & Invisible",
+	Desc = "Yeraltında otomatik coin toplar",
+	Value = false,
+	Callback = function(v)
+		ZX.startFarm(v)
+	end,
+})
+
+FarmSection:Toggle({
+	Title = "FE Invisible",
+	Desc = "Farm yaparken karakteri tamamen görünmez yapar",
+	Value = true,
+	Callback = function(v)
+		ZX.farm.hide = v
+	end,
+})
+
+FarmSection:Slider({
+	Title = "Auto Farm Hızı",
+	Step = 10,
+	Value = { Min = 30, Max = 300, Default = 80 },
+	Callback = function(v)
+		ZX.farm.delay = v / 1000
+	end,
+})
+
+FarmSection:Slider({
+	Title = "Farm Uçuş Hızı",
+	Step = 5,
+	Value = { Min = 10, Max = 100, Default = 35 },
+	Callback = function(v)
+		ZX.farm.flySpeed = v
+	end,
+})
+
+-- ===============================================================
+-- B.2) MM2 HAREKET & HITBOX GÜVENLİĞİ (WALLHOP / INFINITE JUMP)
+-- ===============================================================
+local MoveSection = CombatTab:Section({ Title = "MM2 Hareket & Hitbox" })
+
+MoveSection:Toggle({
+	Title = "Wallhop",
+	Desc = "Havadayken duvara yakınsan tekrar zıplayıp yükselirsin",
+	Value = false,
+	Callback = function(v)
+		ZX.move.wallhop = v
+	end,
+})
+
+MoveSection:Slider({
+	Title = "Wallhop Gücü",
+	Step = 5,
+	Value = { Min = 20, Max = 150, Default = 50 },
+	Callback = function(v)
+		ZX.move.whPower = v
+	end,
+})
+
+MoveSection:Slider({
+	Title = "Wallhop Duvar Mesafesi",
+	Step = 1,
+	Value = { Min = 2, Max = 10, Default = 4 },
+	Callback = function(v)
+		ZX.move.whRange = v
+	end,
+})
+
+MoveSection:Toggle({
+	Title = "Infinite Jump",
+	Desc = "Havada istediğin kadar zıplarsın",
+	Value = false,
+	Callback = function(v)
+		ZX.move.infJump = v
+		ZX.move.ijCount = 0
+	end,
+})
+
+MoveSection:Slider({
+	Title = "Ekstra Zıplama Limiti",
+	Step = 1,
+	Value = { Min = 0, Max = 10, Default = 0 },
+	Callback = function(v)
+		ZX.move.ijLimit = v
+	end,
+})
+
+MoveSection:Toggle({
+	Title = "Hitbox Reach Güvenliği",
+	Desc = "Uzaktan basılan sahte dokunuşları engeller, içine ışınlanmayı önler",
+	Value = true,
+	Callback = function(v)
+		ZX.move.guard = v
+	end,
+})
+
+MoveSection:Slider({
+	Title = "Maks. Bıçak Reach",
+	Step = 1,
+	Value = { Min = 4, Max = 14, Default = 8 },
+	Callback = function(v)
+		ZX.move.maxTouchReach = v
+	end,
+})
+
+-- ===============================================================
+-- C) VISUAL SEKMESİ (MM2 Görselleri & Efektler)
+-- ===============================================================
+local VisualTab = Window:Tab({
+	Title = "Visual",
+	Icon = "solar:eye-bold",
+})
+
+local MapDupeTab = Window:Tab({
+	Title = "Map Duper",
+	Icon = "solar:map-bold",
+})
+
+ZX.mapdupe.tab = MapDupeTab
+
+MapDupeTab:Paragraph({
+	Title = "Nasıl Çalışır",
+	Desc = "Aşağıdaki haritalardan birine basarak seç, sonra Map Dupe Aktif'i aç. Dupe; reset atıp oy paneline ışınlanarak sürekli oy verir, oylama bitince durur.",
+})
+
+local mapImages = {
+	["Bank 2"]            = "https://wikiassets.net/roblox-mm2-bedfb0/images/858b4e5aadbf31e84946d2c1e0f5dd32.webp",
+	["Biolab"]            = "https://wikiassets.net/roblox-mm2-bedfb0/images/857618564823812ea772916864a3489b.webp",
+	["Factory"]           = "https://wikiassets.net/roblox-mm2-bedfb0/images/49b965045df9338f817d3194073f5801.webp",
+	["Hospital 3"]        = "https://wikiassets.net/roblox-mm2-bedfb0/images/99e4ed09b8d23217e27762d54a0a0453.webp",
+	["Hotel 2"]           = "https://wikiassets.net/roblox-mm2-bedfb0/images/e4e9fff801104273cd39fd9f549976ba.webp",
+	["House 2"]           = "https://wikiassets.net/roblox-mm2-bedfb0/images/448318034fe2e53938b13027aeeed404.webp",
+	["Mansion 2"]         = "https://wikiassets.net/roblox-mm2-bedfb0/images/2dcd2b146e3dc43ac7ca60133d767b44.webp",
+	["MilBase"]           = "https://wikiassets.net/roblox-mm2-bedfb0/images/aa8175e23e60bcc2642af713a93b334d.webp",
+	["Office 3"]          = "https://wikiassets.net/roblox-mm2-bedfb0/images/a25875320da18cb5be04e50d3c713a5a.webp",
+	["Police Station"]    = "https://wikiassets.net/roblox-mm2-bedfb0/images/7646ea69afbd08f50ab209c35310216f.webp",
+	["Research Facility"] = "https://wikiassets.net/roblox-mm2-bedfb0/images/adb29ba7b76be7b42178580daf208606.webp",
+	["Workplace"]         = "https://wikiassets.net/roblox-mm2-bedfb0/images/0e4c3117ccc8bfbffed08e754d388a4b.webp",
+}
+
+ZX.mapdupe.cards = {}
+for _, mName in ipairs(ZX.mapdupe.maps) do
+	pcall(function()
+		MapDupeTab:Image({
+			Image = mapImages[mName] or "",
+			AspectRatio = "16:9",
+		})
+	end)
+	local card = MapDupeTab:Button({
+		Title = mName,
+		Desc = "Bu haritayı seç",
+		Callback = function()
+			ZX.mapdupe.selected = mName
+			for _, c in pairs(ZX.mapdupe.cards or {}) do
+				pcall(function() c:SetDesc("Bu haritayı seç") end)
+			end
+			pcall(function() card:SetDesc("✔ SEÇİLİ") end)
+			if ZX.winduiNotify then
+				ZX.winduiNotify("Map Duper", mName .. " seçildi — Map Dupe Aktif'i açabilirsin")
+			end
+		end,
 	})
+	table.insert(ZX.mapdupe.cards, card)
+end
 
-	-- Mobil açma butonu bağlantısı
-	if mobileOpenBtn and Window then
-		mobileOpenBtn.MouseButton1Click:Connect(function()
-			pcall(function() Window:Toggle() end)
+MapDupeTab:Toggle({
+	Title = "Map Dupe Aktif",
+	Desc = "Reset çekip seçilen haritanın oy paneline ışınlanarak sürekli oy verir, oylama bitince durur",
+	Value = false,
+	Callback = function(v)
+		if v then
+			ZX.mapdupe.notifyMsg = nil
+			ZX.startMapDupe(true)
+			task.spawn(function()
+				while ZX.mapdupe.enabled do
+					task.wait(0.5)
+				end
+				if ZX.mapdupe.notifyMsg and ZX.winduiNotify then
+					ZX.winduiNotify("Map Dupe", ZX.mapdupe.notifyMsg)
+					ZX.mapdupe.notifyMsg = nil
+				end
+			end)
+		else
+			ZX.mapdupe.enabled = false
+			ZX.mapdupe.notifyMsg = nil
+		end
+	end,
+})
+
+MapDupeTab:Slider({
+	Title = "Dupe Hızı",
+	Step = 50,
+	Value = { Min = 100, Max = 2000, Default = 300 },
+	Callback = function(v)
+		ZX.mapdupe.delay = v / 1000
+	end,
+})
+
+local TracerSection = VisualTab:Section({ Title = "Bullet Tracer" })
+
+TracerSection:Toggle({
+	Title = "Bullet Tracer 3D Neon",
+	Desc = "Merminin gittiği yere neon ışık çizer ve silaha mavi trail ekler",
+	Value = false,
+	Callback = function(v)
+		ZX.tracer.enabled = v
+		local char = player.Character
+		if char then
+			for _, t in ipairs(char:GetChildren()) do
+				if t:IsA("Tool") then pcall(updateWeaponBlueTrail, t) end
+			end
+		end
+	end,
+})
+
+TracerSection:Slider({
+	Title = "Tracer Süresi",
+	Step = 1,
+	Value = { Min = 1, Max = 40, Default = 10 },
+	Callback = function(v)
+		ZX.tracer.duration = v * 0.1
+	end,
+})
+
+TracerSection:Slider({
+	Title = "Tracer Kalınlığı",
+	Step = 1,
+	Value = { Min = 1, Max = 15, Default = 3 },
+	Callback = function(v)
+		ZX.tracer.thickness = v
+	end,
+})
+
+TracerSection:Colorpicker({
+	Title = "Tracer Rengi",
+	Default = Color3.fromRGB(0, 255, 140),
+	Callback = function(col)
+		ZX.tracer.color = col
+	end,
+})
+
+local SpinSection = VisualTab:Section({ Title = "Spin Items" })
+
+SpinSection:Toggle({
+	Title = "Spin Items",
+	Desc = "Silahı aşağı 380°, kılıcı sola doğru çevirir",
+	Value = false,
+	Callback = function(v)
+		ZX.spin.enabled = v
+	end,
+})
+
+SpinSection:Slider({
+	Title = "Dönüş Hızı",
+	Step = 10,
+	Value = { Min = 60, Max = 800, Default = 380 },
+	Callback = function(v)
+		ZX.spin.speed = v
+	end,
+})
+
+local MM2WorldSection = VisualTab:Section({ Title = "MM2 Dünya Görselleri" })
+
+MM2WorldSection:Toggle({
+	Title = "Dropped Gun ESP",
+	Desc = "Düşen silahın etrafına sarı parlayan kutu koyar",
+	Value = false,
+	Callback = function(v)
+		ZX.box.gun = v
+	end,
+})
+
+MM2WorldSection:Toggle({
+	Title = "Coin ESP",
+	Desc = "Haritadaki coinleri gösterir",
+	Value = false,
+	Callback = function(v)
+		ZX.box.coin = v
+	end,
+})
+
+MM2WorldSection:Toggle({
+	Title = "Game Timer MM2",
+	Desc = "Ekranda maçın gerçek kalan süresini veya LOBBY yazar",
+	Value = false,
+	Callback = function(v)
+		ZX.timer.enabled = v
+	end,
+})
+
+local SkinSection = VisualTab:Section({ Title = "Skin Seçici" })
+
+SkinSection:Toggle({
+	Title = "Skin Seçici Aktif",
+	Desc = "Silah ve kılıç renklerini ve neon efektlerini değiştirir",
+	Value = false,
+	Callback = function(v)
+		ZX.skins.enabled = v
+		task.spawn(function()
+			local bp = player:FindFirstChild("Backpack")
+			if bp then
+				for _, t in ipairs(bp:GetChildren()) do
+					if t:IsA("Tool") then pcall(ZX.applyWeaponSkin, t) end
+				end
+			end
+			local char = player.Character
+			if char then
+				for _, t in ipairs(char:GetChildren()) do
+					if t:IsA("Tool") then pcall(ZX.applyWeaponSkin, t) end
+				end
+			end
+		end)
+	end,
+})
+
+SkinSection:Dropdown({
+	Title = "Bıçak Kostümü",
+	Values = knifeNames,
+	Value = "Default",
+	Callback = function(selected)
+		ZX.skins.knife = selected
+		task.spawn(function()
+			local bp = player:FindFirstChild("Backpack")
+			if bp then
+				for _, t in ipairs(bp:GetChildren()) do
+					if t:IsA("Tool") and weaponKind(t) == "knife" then pcall(ZX.applyWeaponSkin, t) end
+				end
+			end
+			local char = player.Character
+			if char then
+				for _, t in ipairs(char:GetChildren()) do
+					if t:IsA("Tool") and weaponKind(t) == "knife" then pcall(ZX.applyWeaponSkin, t) end
+				end
+			end
+		end)
+	end,
+})
+
+SkinSection:Dropdown({
+	Title = "Silah Kostümü",
+	Values = gunNames,
+	Value = "Default",
+	Callback = function(selected)
+		ZX.skins.gun = selected
+		task.spawn(function()
+			local bp = player:FindFirstChild("Backpack")
+			if bp then
+				for _, t in ipairs(bp:GetChildren()) do
+					if t:IsA("Tool") and weaponKind(t) == "gun" then pcall(ZX.applyWeaponSkin, t) end
+				end
+			end
+			local char = player.Character
+			if char then
+				for _, t in ipairs(char:GetChildren()) do
+					if t:IsA("Tool") and weaponKind(t) == "gun" then pcall(ZX.applyWeaponSkin, t) end
+				end
+			end
+		end)
+	end,
+})
+
+-- ===============================================================
+-- D) TSB SEKMESİ (The Strongest Battlegrounds)
+-- ===============================================================
+local TsbTab = Window:Tab({
+	Title = "TSB",
+	Icon = "solar:user-bold",
+})
+
+local TsbSection = TsbTab:Section({ Title = "Auto Block & Parry" })
+
+TsbSection:Toggle({
+	Title = "Auto Block Aktif",
+	Desc = "Düşman saldırılarını otomatik bloklar",
+	Value = autoBlockEnabled or false,
+	Callback = function(v)
+		autoBlockEnabled = v
+	end,
+})
+
+TsbSection:Slider({
+	Title = "Algılama Menzili",
+	Step = 1,
+	Value = { Min = 5, Max = 60, Default = (tsbSettings and tsbSettings.Range) or 25 },
+	Callback = function(v)
+		if tsbSettings then tsbSettings.Range = v end
+	end,
+})
+
+TsbSection:Slider({
+	Title = "Blok Gecikmesi",
+	Step = 10,
+	Value = { Min = 0, Max = 400, Default = (tsbSettings and math.floor(tsbSettings.Delay * 1000)) or 50 },
+	Callback = function(v)
+		if tsbSettings then tsbSettings.Delay = v / 1000 end
+	end,
+})
+
+TsbSection:Slider({
+	Title = "Görüş Açısı",
+	Step = 15,
+	Value = { Min = 30, Max = 360, Default = (tsbSettings and tsbSettings.Fov) or 180 },
+	Callback = function(v)
+		if tsbSettings then tsbSettings.Fov = v end
+	end,
+})
+
+TsbSection:Toggle({
+	Title = "Sadece Karşımdakileri Koru",
+	Value = (tsbSettings and tsbSettings.Facing) or false,
+	Callback = function(v)
+		if tsbSettings then tsbSettings.Facing = v end
+	end,
+})
+
+TsbSection:Toggle({
+	Title = "Saldırana Dön",
+	Value = (tsbSettings and tsbSettings.Aimhelper) or false,
+	Callback = function(v)
+		if tsbSettings then tsbSettings.Aimhelper = v end
+	end,
+})
+
+TsbSection:Keybind({
+	Title = "Auto Block Aç/Kapa Tuşu",
+	Value = "None",
+	Callback = function()
+		autoBlockEnabled = not autoBlockEnabled
+		WindUI:Notify({
+			Title = "Auto Block",
+			Content = autoBlockEnabled and "Aktif" or "Kapalı",
+			Duration = 2,
+		})
+	end,
+})
+
+local TsbCounterSection = TsbTab:Section({ Title = "Counter ESP" })
+
+TsbCounterSection:Toggle({
+	Title = "Counter ESP Aktif",
+	Value = tsbCounterEspEnabled or false,
+	Callback = function(v)
+		tsbCounterEspEnabled = v
+	end,
+})
+
+TsbCounterSection:Toggle({
+	Title = "Death Counter Bildirimi",
+	Value = tsbCounterNotifyEnded or false,
+	Callback = function(v)
+		tsbCounterNotifyEnded = v
+	end,
+})
+
+TsbCounterSection:Keybind({
+	Title = "Counter ESP Aç/Kapa Tuşu",
+	Value = "None",
+	Callback = function()
+		tsbCounterEspEnabled = not tsbCounterEspEnabled
+		if not tsbCounterEspEnabled then
+			pcall(function()
+				for p, _ in pairs(activeCounters) do
+					activeCounters[p] = nil
+					if not normalEspEnabled and not mm2EspEnabled then
+						removePlayerVisuals(p)
+					end
+				end
+			end)
+		end
+		WindUI:Notify({
+			Title = "Counter ESP",
+			Content = tsbCounterEspEnabled and "Aktif" or "Kapalı",
+			Duration = 2,
+		})
+	end,
+})
+
+-- ===============================================================
+-- E) SETTINGS SEKMESİ (Arayüz & Tema)
+-- ===============================================================
+local SettingsTab = Window:Tab({
+	Title = "Settings",
+	Icon = "solar:settings-bold",
+})
+
+local UISettingsSection = SettingsTab:Section({ Title = "Arayüz Ayarları" })
+
+UISettingsSection:Dropdown({
+	Title = "Arayüz Teması",
+	Values = { "Dark", "Light", "Rose", "Aqua" },
+	Value = "Dark",
+	Callback = function(theme)
+		pcall(function() Window:SetTheme(theme) end)
+	end,
+})
+
+UISettingsSection:Keybind({
+	Title = "Menü Açma/Kapama Tuşu",
+	Value = "G",
+	Callback = function(key)
+		pcall(function() Window:SetToggleKey(key) end)
+	end,
+})
+
+UISettingsSection:Button({
+	Title = "Pencereyi Kapat / Aç",
+	Desc = "G tuşu veya ekrandaki OPEN butonuyla da açılabilir",
+	Callback = function()
+		pcall(function() Window:Toggle() end)
+	end,
+})
+
+UISettingsSection:Button({
+	Title = "Arayüzü Yok Et",
+	Callback = function()
+		pcall(function() Window:Destroy() end)
+	end,
+})
+
+-- ---------------------------------------------------------------
+-- 13) AYARLAR DRAWER — BUTUN AYARLAR TEK PANELDE, KAYARAK ACILIR
+-- ---------------------------------------------------------------
+pcall(function()
+	local ayarAccent  = Color3.fromRGB(0, 255, 140)
+	local ayarBg      = Color3.fromRGB(18, 18, 20)
+	local ayarRow     = Color3.fromRGB(26, 26, 29)
+	local ayarPillOff = Color3.fromRGB(44, 44, 50)
+	local ayarText    = Color3.fromRGB(235, 235, 240)
+
+	local drawerW = isMobile and 300 or 360
+	local drawerH = isMobile and 420 or 520
+
+	local AyarGui = Instance.new("ScreenGui")
+	AyarGui.Name = "ZeroXAyarlarGui"
+	AyarGui.ResetOnSpawn = false
+	AyarGui.IgnoreGuiInset = true
+	AyarGui.DisplayOrder = 10000
+
+	local mounted = false
+	if typeof(gethui) == "function" then
+		mounted = pcall(function() AyarGui.Parent = gethui() end)
+	end
+	if not mounted then
+		mounted = pcall(function() AyarGui.Parent = game:GetService("CoreGui") end)
+	end
+	if not mounted then
+		AyarGui.Parent = player:WaitForChild("PlayerGui")
+	end
+
+	-- Kayarak açılan panel
+	local drawer = Instance.new("Frame")
+	drawer.Name = "AyarDrawer"
+	drawer.Size = UDim2.fromOffset(drawerW, drawerH)
+	drawer.AnchorPoint = Vector2.new(0, 0.5)
+	drawer.Position = UDim2.new(1, 40, 0.5, 0)
+	drawer.BackgroundColor3 = ayarBg
+	drawer.BorderSizePixel = 0
+	drawer.ClipsDescendants = true
+	drawer.Parent = AyarGui
+
+	local dCorner = Instance.new("UICorner")
+	dCorner.CornerRadius = UDim.new(0, 12)
+	dCorner.Parent = drawer
+
+	local dStroke = Instance.new("UIStroke")
+	dStroke.Color = Color3.fromRGB(40, 40, 44)
+	dStroke.Thickness = 1
+	dStroke.Parent = drawer
+
+	local dHeader = Instance.new("Frame")
+	dHeader.Size = UDim2.new(1, 0, 0, 40)
+	dHeader.BackgroundColor3 = ayarRow
+	dHeader.BorderSizePixel = 0
+	dHeader.Parent = drawer
+
+	local hCorner = Instance.new("UICorner")
+	hCorner.CornerRadius = UDim.new(0, 12)
+	hCorner.Parent = dHeader
+
+	local hPatch = Instance.new("Frame")
+	hPatch.Size = UDim2.new(1, 0, 0, 12)
+	hPatch.Position = UDim2.new(0, 0, 1, -12)
+	hPatch.BackgroundColor3 = ayarRow
+	hPatch.BorderSizePixel = 0
+	hPatch.Parent = dHeader
+
+	local dTitle = Instance.new("TextLabel")
+	dTitle.BackgroundTransparency = 1
+	dTitle.Position = UDim2.new(0, 12, 0, 0)
+	dTitle.Size = UDim2.new(1, -60, 1, 0)
+	dTitle.Font = Enum.Font.GothamBold
+	dTitle.TextSize = 15
+	dTitle.TextColor3 = ayarAccent
+	dTitle.TextXAlignment = Enum.TextXAlignment.Left
+	dTitle.Text = "AYARLAR"
+	dTitle.Parent = dHeader
+
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Size = UDim2.fromOffset(26, 26)
+	closeBtn.AnchorPoint = Vector2.new(1, 0.5)
+	closeBtn.Position = UDim2.new(1, -8, 0.5, 0)
+	closeBtn.BackgroundColor3 = Color3.fromRGB(34, 34, 38)
+	closeBtn.Font = Enum.Font.GothamBold
+	closeBtn.TextSize = 13
+	closeBtn.TextColor3 = ayarText
+	closeBtn.Text = "X"
+	closeBtn.BorderSizePixel = 0
+	closeBtn.Parent = dHeader
+
+	local cCorner = Instance.new("UICorner")
+	cCorner.CornerRadius = UDim.new(1, 0)
+	cCorner.Parent = closeBtn
+
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Name = "AyarScroll"
+	scroll.Position = UDim2.new(0, 6, 0, 46)
+	scroll.Size = UDim2.new(1, -12, 1, -54)
+	scroll.BackgroundTransparency = 1
+	scroll.BorderSizePixel = 0
+	scroll.ScrollBarThickness = 3
+	scroll.ScrollBarImageColor3 = ayarAccent
+	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.Parent = drawer
+
+	local listLayout = Instance.new("UIListLayout")
+	listLayout.Padding = UDim.new(0, 4)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Parent = scroll
+
+	local function newRow(order)
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1, -4, 0, 34)
+		row.BackgroundColor3 = ayarRow
+		row.BorderSizePixel = 0
+		row.LayoutOrder = order
+		row.Parent = scroll
+		local rc = Instance.new("UICorner")
+		rc.CornerRadius = UDim.new(0, 8)
+		rc.Parent = row
+		return row
+	end
+
+	local function addHeaderRow(text, order)
+		local h = Instance.new("TextLabel")
+		h.Size = UDim2.new(1, -4, 0, 26)
+		h.BackgroundTransparency = 1
+		h.Font = Enum.Font.GothamBold
+		h.TextSize = 12
+		h.TextColor3 = ayarAccent
+		h.TextXAlignment = Enum.TextXAlignment.Left
+		h.Text = text
+		h.LayoutOrder = order
+		h.Parent = scroll
+	end
+
+	local function addToggleRow(text, getter, setter, order)
+		local row = newRow(order)
+
+		local lbl = Instance.new("TextLabel")
+		lbl.BackgroundTransparency = 1
+		lbl.Position = UDim2.new(0, 10, 0, 0)
+		lbl.Size = UDim2.new(1, -70, 1, 0)
+		lbl.Font = Enum.Font.Gotham
+		lbl.TextSize = 12
+		lbl.TextColor3 = ayarText
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.Text = text
+		lbl.Parent = row
+
+		local pill = Instance.new("TextButton")
+		pill.Size = UDim2.fromOffset(42, 22)
+		pill.AnchorPoint = Vector2.new(1, 0.5)
+		pill.Position = UDim2.new(1, -6, 0.5, 0)
+		pill.Text = ""
+		pill.BorderSizePixel = 0
+		pill.Parent = row
+		local pc = Instance.new("UICorner")
+		pc.CornerRadius = UDim.new(1, 0)
+		pc.Parent = pill
+
+		local knob = Instance.new("Frame")
+		knob.Size = UDim2.fromOffset(16, 16)
+		knob.BorderSizePixel = 0
+		knob.BackgroundColor3 = ayarBg
+		knob.Parent = pill
+		local kc = Instance.new("UICorner")
+		kc.CornerRadius = UDim.new(1, 0)
+		kc.Parent = knob
+
+		local function refresh()
+			local on = getter() and true or false
+			pill.BackgroundColor3 = on and ayarAccent or ayarPillOff
+			knob.Position = on and UDim2.new(1, -19, 0, 3) or UDim2.new(0, 3, 0, 3)
+		end
+		refresh()
+		pill.MouseButton1Click:Connect(function()
+			setter(not getter())
+			refresh()
 		end)
 	end
 
-	-- A) MAIN SEKMESİ (DİREKT SEKME, KATALOG DEĞİL)
-	local MainTab = Window:Tab({
-		Title = "Main",
-		Icon = "solar:home-2-bold",
-	})
+	local function addStepperRow(text, getter, setter, minV, maxV, stepV, order)
+		local row = newRow(order)
 
-	MainTab:Toggle({
-		Title = "Oyuncu ESP (Genel)",
-		Value = normalEspEnabled or false,
-		Callback = function(v)
-			normalEspEnabled = v
-		end,
-	})
+		local lbl = Instance.new("TextLabel")
+		lbl.BackgroundTransparency = 1
+		lbl.Position = UDim2.new(0, 10, 0, 0)
+		lbl.Size = UDim2.new(1, -118, 1, 0)
+		lbl.Font = Enum.Font.Gotham
+		lbl.TextSize = 12
+		lbl.TextColor3 = ayarText
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.Text = text
+		lbl.Parent = row
 
-	MainTab:Dropdown({
-		Title = "Arayüz Teması",
-		Values = { "Dark", "Midnight", "Rose", "Plant", "Red", "Purple" },
-		Value = "Dark",
-		Callback = function(themeName)
-			pcall(function() WindUI:SetTheme(themeName) end)
-		end,
-	})
+		local valLabel = Instance.new("TextLabel")
+		valLabel.Size = UDim2.fromOffset(46, 22)
+		valLabel.AnchorPoint = Vector2.new(1, 0.5)
+		valLabel.Position = UDim2.new(1, -32, 0.5, 0)
+		valLabel.BackgroundColor3 = Color3.fromRGB(34, 34, 38)
+		valLabel.Font = Enum.Font.GothamBold
+		valLabel.TextSize = 12
+		valLabel.TextColor3 = ayarText
+		valLabel.Text = tostring(getter())
+		valLabel.Parent = row
+		local vc = Instance.new("UICorner")
+		vc.CornerRadius = UDim.new(0, 6)
+		vc.Parent = valLabel
 
-	-- B) MM2 KATALOĞU (Section altında Combat ve Visual sekmeleri)
-	local MM2Section = Window:Section({
-		Title = "MM2",
-		Opened = true,
-	})
+		local minus = Instance.new("TextButton")
+		minus.Size = UDim2.fromOffset(24, 22)
+		minus.AnchorPoint = Vector2.new(1, 0.5)
+		minus.Position = UDim2.new(1, -104, 0.5, 0)
+		minus.BackgroundColor3 = Color3.fromRGB(34, 34, 38)
+		minus.Font = Enum.Font.GothamBold
+		minus.TextSize = 14
+		minus.TextColor3 = ayarText
+		minus.Text = "-"
+		minus.BorderSizePixel = 0
+		minus.Parent = row
+		local mc = Instance.new("UICorner")
+		mc.CornerRadius = UDim.new(0, 6)
+		mc.Parent = minus
 
-	local CombatTab = MM2Section:Tab({
-		Title = "Combat",
-		Icon = "solar:sword-bold",
-	})
+		local plus = Instance.new("TextButton")
+		plus.Size = UDim2.fromOffset(24, 22)
+		plus.AnchorPoint = Vector2.new(1, 0.5)
+		plus.Position = UDim2.new(1, -6, 0.5, 0)
+		plus.BackgroundColor3 = Color3.fromRGB(34, 34, 38)
+		plus.Font = Enum.Font.GothamBold
+		plus.TextSize = 14
+		plus.TextColor3 = ayarText
+		plus.Text = "+"
+		plus.BorderSizePixel = 0
+		plus.Parent = row
+		local plc = Instance.new("UICorner")
+		plc.CornerRadius = UDim.new(0, 6)
+		plc.Parent = plus
 
-	local VisualTab = MM2Section:Tab({
-		Title = "Visual",
-		Icon = "solar:eye-bold",
-	})
+		local function bump(dir)
+			local cur = tonumber(getter()) or 0
+			local nv = math.clamp(cur + dir * stepV, minV, maxV)
+			if nv ~= cur then
+				setter(nv)
+			end
+			valLabel.Text = tostring(getter())
+		end
+		minus.MouseButton1Click:Connect(function() bump(-1) end)
+		plus.MouseButton1Click:Connect(function() bump(1) end)
+	end
 
-	-- COMBAT İÇERİĞİ
-	CombatTab:Toggle({
-		Title = "MM2 Rol ESP (Roller & Silah)",
-		Value = mm2EspEnabled or false,
-		Callback = function(v)
-			mm2EspEnabled = v
-		end,
-	})
+	local function buildRows()
+		for _, ch in ipairs(scroll:GetChildren()) do
+			if not ch:IsA("UIListLayout") then
+				ch:Destroy()
+			end
+		end
+		local o = 0
+		local function nx()
+			o = o + 1
+			return o
+		end
 
-	CombatTab:Button({
-		Title = "TP Drop Gun (Yere Düşen Silah)",
-		Callback = function()
-			pcall(triggerTpGun)
-		end,
-	})
+		-- HITBOX
+		addHeaderRow("HITBOX", nx())
+		addToggleRow("Hitbox Expander", function() return hitboxEnabled end, function(v)
+			hitboxEnabled = v
+			pcall(updateAllHitboxes)
+		end, nx())
+		addStepperRow("Hitbox Boyutu", function() return hitboxSize end, function(v)
+			hitboxSize = v
+			if hitboxEnabled then pcall(updateAllHitboxes) end
+		end, 2, 40, 1, nx())
+		addStepperRow("Hitbox Saydamlık", function() return math.floor(hitboxTransparency * 10 + 0.5) end, function(v)
+			hitboxTransparency = v / 10
+			if hitboxEnabled then pcall(updateAllHitboxes) end
+		end, 0, 9, 1, nx())
+		addToggleRow("Reach Güvenliği", function() return ZX.move.guard end, function(v)
+			ZX.move.guard = v
+		end, nx())
+		addStepperRow("Maks. Bıçak Reach", function() return ZX.move.maxTouchReach end, function(v)
+			ZX.move.maxTouchReach = v
+		end, 4, 14, 1, nx())
 
-	CombatTab:Button({
-		Title = "Shoot Murderer (Silent Aim)",
-		Callback = function()
-			pcall(triggerShootMurderer)
-		end,
-	})
+		-- HAREKET
+		addHeaderRow("HAREKET", nx())
+		addToggleRow("Wallhop", function() return ZX.move.wallhop end, function(v)
+			ZX.move.wallhop = v
+		end, nx())
+		addStepperRow("Wallhop Gücü", function() return ZX.move.whPower end, function(v)
+			ZX.move.whPower = v
+		end, 20, 150, 5, nx())
+		addStepperRow("Wallhop Duvar Mesafesi", function() return ZX.move.whRange end, function(v)
+			ZX.move.whRange = v
+		end, 2, 10, 1, nx())
+		addToggleRow("Infinite Jump", function() return ZX.move.infJump end, function(v)
+			ZX.move.infJump = v
+			ZX.move.ijCount = 0
+		end, nx())
+		addStepperRow("Zıplama Limiti (0 = Sınırsız)", function() return ZX.move.ijLimit end, function(v)
+			ZX.move.ijLimit = v
+		end, 0, 10, 1, nx())
+		addToggleRow("SpinBot", function() return spinBotEnabled end, function(v)
+			spinBotEnabled = v
+		end, nx())
+		addStepperRow("SpinBot Hızı", function() return spinBotSpeed end, function(v)
+			spinBotSpeed = v
+		end, 5, 100, 1, nx())
+		addToggleRow("Speed Glitch", function() return speedGlitchEnabled end, function(v)
+			speedGlitchEnabled = v
+		end, nx())
+		addStepperRow("Speed Glitch Gücü", function() return speedGlitchPower end, function(v)
+			speedGlitchPower = v
+		end, 15, 200, 5, nx())
 
-	CombatTab:Button({
-		Title = "Fling Sheriff (Şerifi Uçur)",
-		Callback = function()
-			pcall(triggerFlingSheriff)
-		end,
-	})
-
-	CombatTab:Button({
-		Title = "Fling Murderer (Katili Uçur)",
-		Callback = function()
-			pcall(triggerFlingMurderer)
-		end,
-	})
-
-	CombatTab:Toggle({
-		Title = "Wallbang (Sadece Şerif)",
-		Desc = "Duvar arkasından nişan alıp sıkarak katili vurma",
-		Value = ZX.wallbang.enabled,
-		Callback = function(v)
-			ZX.wallbang.enabled = v
-			wallbangEnabled = v
-		end,
-	})
-
-	CombatTab:Toggle({
-		Title = "Auto Farm (Coin & Invisible)",
-		Desc = "Harita altına inip görünmez olarak coin toplar",
-		Value = ZX.farm.enabled,
-		Callback = function(v)
+		-- FARM
+		addHeaderRow("FARM", nx())
+		addToggleRow("Auto Farm", function() return ZX.farm.enabled end, function(v)
 			ZX.startFarm(v)
-		end,
-	})
+		end, nx())
+		addToggleRow("FE Invisible", function() return ZX.farm.hide end, function(v)
+			ZX.farm.hide = v
+		end, nx())
+		addStepperRow("Farm Hızı (ms)", function() return math.floor(ZX.farm.delay * 1000 + 0.5) end, function(v)
+			ZX.farm.delay = v / 1000
+		end, 30, 300, 10, nx())
+		addStepperRow("Farm Uçuş Hızı", function() return ZX.farm.flySpeed or 35 end, function(v)
+			ZX.farm.flySpeed = v
+		end, 10, 100, 5, nx())
 
-	CombatTab:Toggle({
-		Title = "Coin Kutu ESP",
-		Value = ZX.box.coin,
-		Callback = function(v)
-			ZX.box.coin = v
-		end,
-	})
-
-	CombatTab:Toggle({
-		Title = "Dropped Gun ESP",
-		Value = ZX.box.gun,
-		Callback = function(v)
-			ZX.box.gun = v
-		end,
-	})
-
-	-- VISUAL İÇERİĞİ
-	VisualTab:Toggle({
-		Title = "Bullet Tracer (Neon İz)",
-		Desc = "Merminin çarptığı duvara kadar uzanan neon çizgi",
-		Value = ZX.tracer.enabled,
-		Callback = function(v)
+		-- GÖRSEL
+		addHeaderRow("GÖRSEL", nx())
+		addToggleRow("Bullet Tracer", function() return ZX.tracer.enabled end, function(v)
 			ZX.tracer.enabled = v
-		end,
-	})
-
-	VisualTab:Slider({
-		Title = "Tracer Kaybolma Süresi (sn)",
-		Value = {
-			Min = 0.2,
-			Max = 5.0,
-			Default = ZX.tracer.duration,
-		},
-		Callback = function(v)
-			ZX.tracer.duration = v
-		end,
-	})
-
-	VisualTab:Colorpicker({
-		Title = "Tracer Neon Rengi",
-		Default = ZX.tracer.color,
-		Callback = function(c)
-			ZX.tracer.color = c
-		end,
-	})
-
-	VisualTab:Dropdown({
-		Title = "Silah Skini (Gun Skin)",
-		Desc = "Client-side silah kostümü (Default en üstte)",
-		Values = gunNames,
-		Value = "Default",
-		Callback = function(skinName)
-			ZX.skins.gun = skinName
-			local char = player.Character
-			local tool = char and char:FindFirstChildOfClass("Tool")
-			if tool then pcall(ZX.applyWeaponSkin, tool) end
-		end,
-	})
-
-	VisualTab:Dropdown({
-		Title = "Kılıç Skini (Knife Skin)",
-		Desc = "Client-side bıçak kostümü (Default en üstte)",
-		Values = knifeNames,
-		Value = "Default",
-		Callback = function(skinName)
-			ZX.skins.knife = skinName
-			local char = player.Character
-			local tool = char and char:FindFirstChildOfClass("Tool")
-			if tool then pcall(ZX.applyWeaponSkin, tool) end
-		end,
-	})
-
-	VisualTab:Toggle({
-		Title = "Spin Items (Silah & Kılıç Döndürme)",
-		Desc = "Silah aşağı 380° döner, kılıç sola döner",
-		Value = ZX.spin.enabled,
-		Callback = function(v)
+		end, nx())
+		addStepperRow("Tracer Süresi", function() return math.floor(ZX.tracer.duration / 0.1 + 0.5) end, function(v)
+			ZX.tracer.duration = v * 0.1
+		end, 1, 40, 1, nx())
+		addStepperRow("Tracer Kalınlığı", function() return ZX.tracer.thickness end, function(v)
+			ZX.tracer.thickness = v
+		end, 1, 15, 1, nx())
+		addToggleRow("Spin Items", function() return ZX.spin.enabled end, function(v)
 			ZX.spin.enabled = v
-		end,
-	})
-
-	VisualTab:Slider({
-		Title = "Dönüş Hızı",
-		Value = {
-			Min = 50,
-			Max = 1200,
-			Default = ZX.spin.speed,
-		},
-		Callback = function(v)
+		end, nx())
+		addStepperRow("Dönüş Hızı", function() return ZX.spin.speed end, function(v)
 			ZX.spin.speed = v
-		end,
-	})
-
-	VisualTab:Toggle({
-		Title = "Game Timer (Maç Süresi)",
-		Desc = "Üstte maçın süresini veya LOBBY yazar",
-		Value = ZX.timer.enabled,
-		Callback = function(v)
+		end, 60, 800, 10, nx())
+		addToggleRow("Dropped Gun ESP", function() return ZX.box.gun end, function(v)
+			ZX.box.gun = v
+		end, nx())
+		addToggleRow("Coin ESP", function() return ZX.box.coin end, function(v)
+			ZX.box.coin = v
+		end, nx())
+		addToggleRow("Game Timer", function() return ZX.timer.enabled end, function(v)
 			ZX.timer.enabled = v
+		end, nx())
+		addToggleRow("Custom FOV", function() return customFovEnabled end, function(v)
+			customFovEnabled = v
+		end, nx())
+		addStepperRow("FOV Değeri", function() return customFovValue end, function(v)
+			customFovValue = v
+		end, 50, 120, 1, nx())
+
+		-- TSB
+		addHeaderRow("TSB", nx())
+		addToggleRow("Auto Block", function() return autoBlockEnabled end, function(v)
+			autoBlockEnabled = v
+		end, nx())
+		addStepperRow("Algılama Menzili", function() return tsbSettings.Range end, function(v)
+			if tsbSettings then tsbSettings.Range = v end
+		end, 5, 60, 5, nx())
+		addStepperRow("Blok Gecikmesi (ms)", function() return math.floor(tsbSettings.Delay * 1000 + 0.5) end, function(v)
+			if tsbSettings then tsbSettings.Delay = v / 1000 end
+		end, 0, 400, 25, nx())
+		addStepperRow("Görüş Açısı", function() return tsbSettings.Fov end, function(v)
+			if tsbSettings then tsbSettings.Fov = v end
+		end, 30, 360, 15, nx())
+		addToggleRow("Sadece Karşımdakileri Koru", function() return tsbSettings.Facing end, function(v)
+			if tsbSettings then tsbSettings.Facing = v end
+		end, nx())
+		addToggleRow("Saldırana Dön", function() return tsbSettings.Aimhelper end, function(v)
+			if tsbSettings then tsbSettings.Aimhelper = v end
+		end, nx())
+		addToggleRow("Counter ESP", function() return tsbCounterEspEnabled end, function(v)
+			tsbCounterEspEnabled = v
+		end, nx())
+
+		-- MM2 ESP
+		addHeaderRow("MM2 ESP", nx())
+		addToggleRow("MM2 Rol ESP", function() return mm2EspEnabled end, function(v)
+			mm2EspEnabled = v
+			pcall(updateAllESP)
+		end, nx())
+		addToggleRow("Katil ESP", function() return mm2EspFlags.MurdererESP end, function(v)
+			if mm2EspFlags then mm2EspFlags.MurdererESP = v end
+			pcall(updateAllESP)
+		end, nx())
+		addToggleRow("Şerif ESP", function() return mm2EspFlags.SheriffESP end, function(v)
+			if mm2EspFlags then mm2EspFlags.SheriffESP = v end
+			pcall(updateAllESP)
+		end, nx())
+		addToggleRow("Masum ESP", function() return mm2EspFlags.InnocentESP end, function(v)
+			if mm2EspFlags then mm2EspFlags.InnocentESP = v end
+			pcall(updateAllESP)
+		end, nx())
+		addToggleRow("Düşen Silah ESP", function() return mm2EspFlags.GunDropESP end, function(v)
+			if mm2EspFlags then mm2EspFlags.GunDropESP = v end
+			pcall(updateAllESP)
+		end, nx())
+	end
+
+	local openState = false
+	local tweenSvc = game:GetService("TweenService")
+	local function setOpen(v)
+		openState = v
+		if v then
+			buildRows()
+		end
+		local target = v and UDim2.new(1, -(drawerW + 14), 0.5, 0) or UDim2.new(1, 40, 0.5, 0)
+		tweenSvc:Create(drawer, TweenInfo.new(0.33, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+			Position = target,
+		}):Play()
+	end
+
+	closeBtn.MouseButton1Click:Connect(function()
+		setOpen(false)
+	end)
+
+	-- Ekran butonu kaldirildi; panel Ayarlar sekmesinden açılır
+	ZX.winduiNotify = function(title, content)
+		pcall(function()
+			WindUI:Notify({ Title = title, Content = content, Duration = 4 })
+		end)
+	end
+	ZX.ayarlar = {
+		open   = function() setOpen(true) end,
+		close  = function() setOpen(false) end,
+		toggle = function() setOpen(not openState) end,
+	}
+	UISettingsSection:Button({
+		Title = "Birleşik Ayarlar Panelini Aç",
+		Desc = "Tüm ayarlar tek panelde, kayarak açılır",
+		Callback = function()
+			setOpen(not openState)
 		end,
 	})
-end)()
+end)
+
+WindUI:Notify({
+	Title = "ZeroX v1.0.1",
+	Content = "Tüm modüller ve WindUI başarıyla yüklendi!",
+	Duration = 4,
+})
+
+end
