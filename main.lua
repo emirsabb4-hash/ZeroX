@@ -6195,7 +6195,12 @@ do
 	end
 
 	RunService.RenderStepped:Connect(function(dt)
-		if not ZX.spin.enabled then return end
+		if not ZX.spin.enabled then
+			for grip, baseC1 in pairs(ZX.origGrip) do
+				if grip and grip.Parent then pcall(function() grip.C1 = baseC1 end) end
+			end
+			return
+		end
 		local grip, tool = findRightGrip()
 		if not grip or not tool then return end
 		local kind = weaponKind(tool)
@@ -6249,22 +6254,27 @@ end
 
 -- ---------------------------------------------------------------
 -- ---------------------------------------------------------------
--- 7) DUVAR ARKASI KESİN VURUŞ (WALLBANG 1-TICK SPOOF)
+-- 7) DUVAR ARKASI KESİN VURUŞ (WALLBANG v3 — DEEP FIX)
 -- ---------------------------------------------------------------
--- Derin araştırma sonucu: MM2 CreateBeam sunucusu KENDI raycast'ini
--- aticinin sunucudaki konumundan yapar; gonderilen aim noktasina
--- konum olarak guvenmez. Saf aim-spoof bu yuzden calismadi.
--- Kullanilan yontem: 1-tick pozisyon spoof — kamera Scriptable'a
--- alinir (görüntü sabit kalir), karakter duvarin hemen otesine
--- tasinir, InvokeServer sunucu istegi isleyip donene kadar senkron
--- bekler (iki atis da bu pencerede gider), sonra karakter eski
--- konumuna geri konur. Tek frame'lik islem; ekranda hicbir asama
--- gorunmez, kendini kimseye isinlatmaz.
+-- v3'te üç kök sorun tek tek çözüldü:
+--  A) "Nereye sıktıysam katilin üstüne gidiyordu" — AIM GATE: atış
+--     yalnızca nişangâh katilin üzerindeyse hijack edilir. Konik
+--     tolerans mesafeyle büyür; nişangâh yanlışsa oyunun kendi
+--     atışı aynen gider, mermi yön değiştirmez.
+--  B) "Bir kere çalıştı, sonra hiç çalışmadı" — REPLİKASYON: MM2
+--     CreateBeam sunucusu raycast'i atıcının sunucudaki konumundan
+--     yapar. Teleport sonrası InvokeServer'dan ÖNCE sunucunun yeni
+--     konumu replike etmesi beklenmeli: her taşıma sonrası 2
+--     Heartbeat bekleniyor, atış o pencerede gidiyor.
+--  C) "Her duvarın arkasından vurabilmeli" — ÇOKLU DUVAR MARCH:
+--     katile ulaşana kadar ardışık raycast; her duvardan normal
+--     yönünde geçilir, aynı engel tekrar yakalanırsa itme mesafesi
+--     katlanır. Reach sınırı yok.
 
--- TRACER DUPE DUZELTMESI: ayni atis icin hem namecall hook hem
--- fallback cizmemek icin tek cizim penceresi (0.15s) uygulanir.
+-- TRACER DUPE DÜZELTMESİ: aynı atış için hem namecall hook hem
+-- fallback çizmemek için tek çizim penceresi (0.15s) uygulanır.
 -- Böylece tracer sadece gerçek mermi yolunu çizer, katile giden
--- atislar da duvarli/duvarsiz her zaman cizilir.
+-- atışlar da duvarlı/duvarsız her zaman çizilir.
 ZX.tracerLast = {}
 ZX.tracerOnce = function(tool, target)
 	if not tool or not target then return end
@@ -6291,22 +6301,65 @@ local function getWallHit(p1, p2, ignoreChar, targetChar)
 	return nil
 end
 
--- 1-tick spoof: sunucu konumunu duvarin otesine tasiyip atislari o
--- pencerede yollar, InvokeServer dondugu an eski konuma geri konur.
-local function fireWithWallSpoof(root, entryPos, entryNormal, fireFn)
+-- Çoklu duvar march: root'tan katile doğru her adımda bir duvara
+-- çarpar, duvarın ötesine geçer ve yeni raycast atar. Aynı Instance
+-- tekrar yakalanırsa (kalın duvar/komşu parçalar) itme 2x'e çıkar.
+local function computeSpoofPath(rootPos, targetPos, ignoreChar, targetChar)
+	local waypoints = {}
+	local cur = rootPos
+	local lastInstance = nil
+	local push = 1.6
+	for _ = 1, 10 do
+		local hit = getWallHit(cur, targetPos, ignoreChar, targetChar)
+		if not hit then break end
+		if hit.Instance == lastInstance then
+			push = math.min(push * 2, 12)
+		else
+			push = 1.6
+		end
+		lastInstance = hit.Instance
+		local nextPos = hit.Position + (hit.Normal * push)
+		table.insert(waypoints, nextPos)
+		cur = nextPos + (hit.Normal * 0.05)
+		if (targetPos - cur).Magnitude < 2.5 then break end
+	end
+	return waypoints
+end
+
+-- AIM GATE: nişangâh katilin üzerinde mi? Konik tolerans 6 derece
+-- + mesafeyle büyüyen pay (uzak hedefte daha toleranslı).
+local function aimOnMurderer(rootPos, camDir, murderer)
+	local mChar = murderer.Character
+	local mRoot = mChar and (mChar:FindFirstChild("HumanoidRootPart")
+		or mChar:FindFirstChild("UpperTorso")
+		or mChar:FindFirstChild("Torso"))
+	if not mRoot then return false end
+	local toM = mRoot.Position - rootPos
+	local dist = toM.Magnitude
+	if dist < 0.5 then return true end
+	local tol = math.rad(6 + math.min(dist * 0.35, 10))
+	return camDir.Unit:Dot(toM.Unit) >= math.cos(tol)
+end
+
+-- 1-tick spoof v3: her duvar noktasında taşı → 2 Heartbeat replikasyon
+-- beklemesi → atış → eski konuma dönüş. Kamera Scriptable'da, ekranda
+-- hiçbir aşama görünmez.
+local function fireWithWallSpoof(root, waypoints, fireFn)
 	local oldCF = root.CFrame
 	local cam = Workspace.CurrentCamera
 	local oldCamSubject = cam.CameraSubject
 	local oldCamType = cam.CameraType
-	local spoofPos = entryPos + (entryNormal * 3.2)
-	spoofPos = Vector3.new(spoofPos.X, oldCF.Position.Y, spoofPos.Z)
-	pcall(function()
-		cam.CameraType = Enum.CameraType.Scriptable
-		root.CFrame = CFrame.new(spoofPos)
-		root.AssemblyLinearVelocity = Vector3.zero
-		root.AssemblyAngularVelocity = Vector3.zero
+	pcall(function() cam.CameraType = Enum.CameraType.Scriptable end)
+	local ok = pcall(function()
+		for _, wp in ipairs(waypoints) do
+			root.CFrame = CFrame.new(wp.X, oldCF.Position.Y, wp.Z)
+			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
+			RunService.Heartbeat:Wait()
+			RunService.Heartbeat:Wait()
+		end
+		fireFn()
 	end)
-	local ok = pcall(fireFn)
 	pcall(function()
 		root.CFrame = oldCF
 		root.AssemblyLinearVelocity = Vector3.zero
@@ -6329,22 +6382,30 @@ local function executeDirectShot(gunTool)
 	local shootRemote, remoteType = getShootRemote(gunTool)
 	if not shootRemote then return false end
 
-	isShooting = true
-	currentAimTorsoPos = aimPos
-	ZX.spin.isFiring = true
-
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 
-	local wallHit = nil
+	local waypoints = nil
 	if root and (ZX.wallbang.enabled or wallbangEnabled) then
-		local mRoot = murderer.Character:FindFirstChild("HumanoidRootPart")
-			or murderer.Character:FindFirstChild("UpperTorso")
-			or murderer.Character:FindFirstChild("Torso")
-		if mRoot then
-			wallHit = getWallHit(root.Position, mRoot.Position, char, murderer.Character)
+		local cam = Workspace.CurrentCamera
+		local camDir = (cam and cam.CFrame.LookVector) or root.CFrame.LookVector
+		-- AIM GATE: nişangâh katilde değilse hijack etme, oyunun kendi
+-- atışına karışma. "Şerife sıktırma" sorununun kökü buydu.
+		if aimOnMurderer(root.Position, camDir, murderer) then
+			local mChar = murderer.Character
+			local mRoot = mChar:FindFirstChild("HumanoidRootPart")
+				or mChar:FindFirstChild("UpperTorso")
+				or mChar:FindFirstChild("Torso")
+			if mRoot then
+				waypoints = computeSpoofPath(root.Position, mRoot.Position, char, mChar)
+			end
 		end
 	end
+	if waypoints and #waypoints == 0 then waypoints = nil end
+
+	isShooting = true
+	currentAimTorsoPos = aimPos
+	ZX.spin.isFiring = true
 
 	for grip, baseC1 in pairs(ZX.origGrip) do
 		if grip and grip.Parent then pcall(function() grip.C1 = baseC1 end) end
@@ -6353,26 +6414,26 @@ local function executeDirectShot(gunTool)
 	if remoteType == "CreateBeam" then
 		local function fireBeams()
 			pcall(function() shootRemote:InvokeServer(1, aimPos, "AH2") end)
-			if wallHit then
+			if waypoints then
 				local freshAim = calculatePrecisionAim(murderer) or aimPos
 				pcall(function() shootRemote:InvokeServer(1, freshAim, "AH2") end)
 			end
 		end
-		if wallHit and root then
-			fireWithWallSpoof(root, wallHit.Position, wallHit.Normal, fireBeams)
+		if waypoints and root then
+			fireWithWallSpoof(root, waypoints, fireBeams)
 		else
 			fireBeams()
 		end
 	elseif remoteType == "ShootEvent" then
 		local hand = char and (char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") or root)
 		local fromPos = hand and hand.Position or (root and root.Position)
-		if wallHit then
-			-- ShootEvent'te from CFrame'i client gonderir: teleport gerekmez,
-			-- from'u duvarin otesinden yollariz.
-			local spoofFrom = wallHit.Position + (wallHit.Normal * 2.0)
-			pcall(function() shootRemote:FireServer(CFrame.new(spoofFrom), CFrame.new(aimPos)) end)
+		if waypoints then
+			-- ShootEvent'te from CFrame'i client gönderir: son duvar
+-- ötesini from yaz, teleport gerekmez.
+			local spoofFrom = waypoints[#waypoints]
+			pcall(function() shootRemote:FireServer(CFrame.new(spoofFrom.X, fromPos.Y, spoofFrom.Z), CFrame.new(aimPos)) end)
 			local freshAim = calculatePrecisionAim(murderer) or aimPos
-			pcall(function() shootRemote:FireServer(CFrame.new(spoofFrom), CFrame.new(freshAim)) end)
+			pcall(function() shootRemote:FireServer(CFrame.new(spoofFrom.X, fromPos.Y, spoofFrom.Z), CFrame.new(freshAim)) end)
 		else
 			pcall(function() shootRemote:FireServer(CFrame.new(fromPos), CFrame.new(aimPos)) end)
 		end
@@ -6433,6 +6494,9 @@ do
 			for grip, baseC1 in pairs(ZX.origGrip) do
 				if grip and grip.Parent then pcall(function() grip.C1 = baseC1 end) end
 			end
+			-- sirt cantasina giden silah da skinli kalsin
+			pcall(ZX.applyWeaponSkin, tool)
+			pcall(updateWeaponBlueTrail, tool)
 		end)
 	end
 
@@ -6451,6 +6515,14 @@ do
 				end
 			end
 			task.wait(0.7)
+		end
+	end)
+	-- sirt cantasina gelmis silahi beklemeden hookla (0.7s loop yeterli olmayabilir)
+	pcall(function()
+		if player:FindFirstChild("Backpack") then
+			player.Backpack.ChildAdded:Connect(function(t)
+				if t:IsA("Tool") then task.defer(hookTool, t) end
+			end)
 		end
 	end)
 end
@@ -6847,6 +6919,7 @@ do
 		if not state then return end
 		task.spawn(function()
 			local cycles = 0
+			local misses = 0
 			while ZX.mapdupe.enabled and cycles < 200 do
 				cycles = cycles + 1
 				local mapLabel = ZX.mapdupe.selected
@@ -6858,9 +6931,35 @@ do
 				local mapNorm = normName(mapLabel)
 				local mapBase = mapNorm:gsub("%d+$", "")
 
-				-- 1) ONCE paneli bul — reset atmadan. Panel yoksa oylama yok/bitti.
-				-- FIX: eski kod once reset atip sonra panel ariyordu; panel bulunamayinca
-				-- reset atiyor, bulamayip tekrar reset atiyor ve orada kaliyordu.
+				-- 1) RESET ÖNCE: dupe her döngüye reset atarak girer.
+				-- Oy hakkı reset sonrası sıfırlanır; eski akış önce panel
+-- arıyor reset atmadan bekliyordu ve reset çekmiyordu.
+				local oldChar = player.Character
+				local oldHum = oldChar and oldChar:FindFirstChildOfClass("Humanoid")
+				if oldHum then
+					pcall(function() oldHum.Health = 0 end)
+					pcall(function() oldHum:ChangeState(Enum.HumanoidStateType.Dead) end)
+				end
+
+				local respawned = false
+				local waited = 0
+				while ZX.mapdupe.enabled and waited < 10 do
+					task.wait(0.1)
+					waited = waited + 0.1
+					local nc = player.Character
+					local nh = nc and nc:FindFirstChildOfClass("Humanoid")
+					if nc ~= oldChar and nh and nh.Health > 0 then
+						respawned = true
+						break
+					end
+				end
+				if not ZX.mapdupe.enabled then break end
+				if not respawned then
+					ZX.mapdupe.notifyMsg = "Respawn alınamadı, durdu."
+					break
+				end
+
+				-- 2) PANELİ BUL: respawn sonrası 8 sn tarama.
 				local pad = nil
 				local scanWaited = 0
 				while ZX.mapdupe.enabled and scanWaited < 8 do
@@ -6871,63 +6970,43 @@ do
 				end
 				if not ZX.mapdupe.enabled then break end
 				if not (pad and pad.Parent) then
-					ZX.mapdupe.notifyMsg = "Oy paneli bulunamadı (oylama bitmiş olabilir). Dupe durdu."
-					break
-				end
+					misses = misses + 1
+					if misses >= 2 then
+						ZX.mapdupe.notifyMsg = "Oy paneli bulunamadı (oylama bitmiş olabilir). Dupe durdu."
+						break
+					end
+				else
+					misses = 0
 
-				-- 2) oy ver: panelin ustunde kal + touch spam (Touched oy kaydeder)
-				local voteEnd = os.clock() + math.max(ZX.mapdupe.delay or 0.3, 0.2)
-				while ZX.mapdupe.enabled and os.clock() < voteEnd do
-					pcall(function()
-						local char = player.Character
-						local r = char and char:FindFirstChild("HumanoidRootPart")
-						if r and pad.Parent then
-							r.CFrame = CFrame.new(pad.Position + Vector3.new(0, 1.2, 0))
-							if firetouchinterest then
-								firetouchinterest(pad, r, 0)
-								firetouchinterest(pad, r, 1)
+					-- 3) OY VER: panelin üstünde kal + touch spam
+					local voteEnd = os.clock() + math.max(ZX.mapdupe.delay or 0.3, 0.2)
+					while ZX.mapdupe.enabled and os.clock() < voteEnd do
+						pcall(function()
+							local char = player.Character
+							local r = char and char:FindFirstChild("HumanoidRootPart")
+							if r and pad.Parent then
+								r.CFrame = CFrame.new(pad.Position + Vector3.new(0, 1.2, 0))
+								if firetouchinterest then
+									firetouchinterest(pad, r, 0)
+									firetouchinterest(pad, r, 1)
+								end
 							end
-						end
-					end)
-					task.wait(0.05)
-				end
-				if not ZX.mapdupe.enabled then break end
+						end)
+						task.wait(0.05)
+					end
+					if not ZX.mapdupe.enabled then break end
 
-				-- 3) panel hala duruyor mu? (kaybolduysa oylama bitti)
-				task.wait(0.2)
-				local stillThere = findVotePad(mapNorm, mapBase)
-				if not (stillThere and stillThere.Parent) then
-					task.wait(0.6)
-					stillThere = findVotePad(mapNorm, mapBase)
-				end
-				if not (stillThere and stillThere.Parent) then
-					ZX.mapdupe.notifyMsg = "Oylama bitti, dupe durdu."
-					break
-				end
-
-				-- 4) RESET: tekrar oy vermek icin yeniden dog
-				local oldChar = player.Character
-				local hum = oldChar and oldChar:FindFirstChildOfClass("Humanoid")
-				if hum then
-					pcall(function() hum.Health = 0 end)
-					pcall(function() hum:ChangeState(Enum.HumanoidStateType.Dead) end)
-				end
-
-				local waited = 0
-				while ZX.mapdupe.enabled and waited < 10 do
-					task.wait(0.1)
-					waited = waited + 0.1
-					local nc = player.Character
-					local nr = nc and nc:FindFirstChild("HumanoidRootPart")
-					local nh = nc and nc:FindFirstChildOfClass("Humanoid")
-					if nr and nh and nh.Health > 0 and nc ~= oldChar then break end
-				end
-				if not ZX.mapdupe.enabled then break end
-				local nc2 = player.Character
-				local nh2 = nc2 and nc2:FindFirstChildOfClass("Humanoid")
-				if not (nc2 and nh2 and nh2.Health > 0) then
-					ZX.mapdupe.notifyMsg = "Respawn alınamadı, durdu."
-					break
+					-- 4) panel hâlâ duruyor mu? (kaybolduysa oylama bitti)
+					task.wait(0.2)
+					local stillThere = findVotePad(mapNorm, mapBase)
+					if not (stillThere and stillThere.Parent) then
+						task.wait(0.6)
+						stillThere = findVotePad(mapNorm, mapBase)
+					end
+					if not (stillThere and stillThere.Parent) then
+						ZX.mapdupe.notifyMsg = "Oylama bitti, dupe durdu."
+						break
+					end
 				end
 			end
 			ZX.mapdupe.enabled = false
@@ -7080,6 +7159,7 @@ do
 
 	local function newLineFrame(zindex)
 		local f = Instance.new("Frame")
+		f.AnchorPoint = Vector2.new(0.5, 0.5)
 		f.BorderSizePixel = 0
 		f.BackgroundColor3 = Color3.new(1, 1, 1)
 		f.ZIndex = zindex
@@ -7290,7 +7370,7 @@ local Window = WindUI:CreateWindow({
 	Author = "ZeroX Hub",
 	Folder = "ZeroX",
 	Icon = "solar:shield-bold",
-	Theme = "Dark",
+	Theme = isMobile and "Midnight" or "Dark",
 	Transparent = true,
 	Resizable = true,
 	Size = isMobile and UDim2.fromOffset(480, 310) or UDim2.fromOffset(620, 430),
@@ -7777,10 +7857,18 @@ ZX.mapdupe.tab = MapDupeTab
 
 MapDupeTab:Paragraph({
 	Title = "Nasıl Çalışır",
-	Desc = "Aşağıdaki haritalardan birine basarak seç, sonra Map Dupe Aktif'i aç. Dupe; reset atıp oy paneline ışınlanarak sürekli oy verir, oylama bitince durur.",
+	Desc = "Şu an oylamada olan haritalar otomatik listelenir ve buraya düşer. Birine basarak seç, sonra Map Dupe Aktif'i aç. Dupe; reset atıp oy paneline ışınlanarak sürekli oy verir, oylama bitince durur.",
 })
 
-local mapImages = {
+ZX.mapdupe.statusPara = MapDupeTab:Paragraph({
+	Title = "Durum",
+	Desc = "Taranıyor…",
+})
+
+ZX.mapdupe.cards = {}
+ZX.mapdupe.cardImgs = {}
+ZX.mapdupe.shownSig = nil
+ZX.mapdupe.images = {
 	["Bank 2"]            = "https://wikiassets.net/roblox-mm2-bedfb0/images/858b4e5aadbf31e84946d2c1e0f5dd32.webp",
 	["Biolab"]            = "https://wikiassets.net/roblox-mm2-bedfb0/images/857618564823812ea772916864a3489b.webp",
 	["Factory"]           = "https://wikiassets.net/roblox-mm2-bedfb0/images/49b965045df9338f817d3194073f5801.webp",
@@ -7795,31 +7883,113 @@ local mapImages = {
 	["Workplace"]         = "https://wikiassets.net/roblox-mm2-bedfb0/images/0e4c3117ccc8bfbffed08e754d388a4b.webp",
 }
 
-ZX.mapdupe.cards = {}
-for _, mName in ipairs(ZX.mapdupe.maps) do
-	pcall(function()
-		MapDupeTab:Image({
-			Image = mapImages[mName] or "",
-			AspectRatio = "16:9",
-		})
-	end)
-	local card = MapDupeTab:Button({
-		Title = mName,
-		Desc = "Bu haritayı seç",
-		Callback = function()
-			ZX.mapdupe.selected = mName
-			for _, c in pairs(ZX.mapdupe.cards or {}) do
-				pcall(function() c:SetDesc("Bu haritayı seç") end)
+-- ===============================================================
+-- 11.9) AKTİF OYLAMA TARAMASI (sadece o an oylamadaki haritalar)
+-- ===============================================================
+-- Eski kartlar statikti (12 harita hep görünüyordu). Şimdi her 3
+-- saniyede Workspace taranır; oy paneli / oylama yazılarında adı
+-- geçen haritalar bulunur, listede değişiklik varsa kartlar
+-- yeniden kurulur. Oylama yoksa sadece durum yazısı kalır.
+ZX.mapdupe.scanActiveMaps = function()
+	local norm = {}
+	local normBase = {}
+	for _, m in ipairs(ZX.mapdupe.maps) do
+		local key = m:lower():gsub("[^%w]", "")
+		norm[key] = m
+		normBase[(key:gsub("%d+$", ""))] = m
+	end
+	local found = {}
+	local seen = {}
+	local count = 0
+	for _, inst in ipairs(Workspace:GetDescendants()) do
+		count = count + 1
+		if count > 20000 then break end
+		local hay = nil
+		local allowBase = false
+		if inst:IsA("TextLabel") or inst:IsA("TextButton") then
+			local t = inst.Text
+			if t and t ~= "" then hay = t:lower():gsub("[^%w]", "") end
+		elseif inst:IsA("BasePart") then
+			local chain = inst.Name:lower()
+			if chain:find("vote") or chain:find("panel") then
+				hay = chain:gsub("[^%w]", "")
+				allowBase = true
 			end
-			pcall(function() card:SetDesc("✔ SEÇİLİ") end)
-			if ZX.winduiNotify then
-				ZX.winduiNotify("Map Duper", mName .. " seçildi — Map Dupe Aktif'i açabilirsin")
+		end
+		if hay and hay ~= "" then
+			for key, mName in pairs(norm) do
+				if not seen[mName] and hay:find(key, 1, true) then
+					seen[mName] = true
+					table.insert(found, mName)
+				end
 			end
-		end,
-	})
-	table.insert(ZX.mapdupe.cards, card)
+			if allowBase then
+				for key, mName in pairs(normBase) do
+					if not seen[mName] and key ~= "" and hay:find(key, 1, true) then
+						seen[mName] = true
+						table.insert(found, mName)
+					end
+				end
+			end
+		end
+	end
+	table.sort(found)
+	return found
 end
 
+ZX.mapdupe.rebuildCards = function(found)
+	for _, c in pairs(ZX.mapdupe.cardImgs or {}) do pcall(function() c:Destroy() end) end
+	for _, c in pairs(ZX.mapdupe.cards or {}) do pcall(function() c:Destroy() end) end
+	ZX.mapdupe.cardImgs = {}
+	ZX.mapdupe.cards = {}
+	if ZX.mapdupe.statusPara then
+		pcall(function()
+			ZX.mapdupe.statusPara:SetDesc(#found > 0
+				and ("Oylamada: " .. table.concat(found, ", "))
+				or "Şu an oylamada harita yok")
+		end)
+	end
+	for _, mName in ipairs(found) do
+		pcall(function()
+			local img = ZX.mapdupe.tab:Image({
+				Image = (ZX.mapdupe.images or {})[mName] or "",
+				AspectRatio = "16:9",
+			})
+			if img then table.insert(ZX.mapdupe.cardImgs, img) end
+		end)
+		local card = ZX.mapdupe.tab:Button({
+			Title = mName,
+			Desc = "Bu haritayı seç",
+			Callback = function()
+				ZX.mapdupe.selected = mName
+				for _, c in pairs(ZX.mapdupe.cards or {}) do
+					pcall(function() c:SetDesc("Bu haritayı seç") end)
+				end
+				pcall(function() card:SetDesc("✔ SEÇİLİ") end)
+				if ZX.winduiNotify then
+					ZX.winduiNotify("Map Duper", mName .. " seçildi — Map Dupe Aktif'i açabilirsin")
+				end
+			end,
+		})
+		table.insert(ZX.mapdupe.cards, card)
+	end
+end
+
+task.spawn(function()
+	while true do
+		task.wait(3)
+		local ok = pcall(function()
+			if not ZX.mapdupe.tab then return end
+			local found = ZX.mapdupe.scanActiveMaps()
+			local sig = table.concat(found, "|")
+			if sig ~= ZX.mapdupe.shownSig then
+				ZX.mapdupe.shownSig = sig
+				ZX.mapdupe.rebuildCards(found)
+			end
+		end)
+		if not ok then task.wait(1) end
+	end
+end)
 MapDupeTab:Toggle({
 	Title = "Map Dupe Aktif",
 	Desc = "Reset çekip seçilen haritanın oy paneline ışınlanarak sürekli oy verir, oylama bitince durur",
@@ -7904,6 +8074,11 @@ SpinSection:Toggle({
 	Value = false,
 	Callback = function(v)
 		ZX.spin.enabled = v
+		if not v then
+			for grip, baseC1 in pairs(ZX.origGrip) do
+				if grip and grip.Parent then pcall(function() grip.C1 = baseC1 end) end
+			end
+		end
 	end,
 })
 
@@ -8519,6 +8694,11 @@ pcall(function()
 		end, 1, 15, 1, nx())
 		addToggleRow("Spin Items", function() return ZX.spin.enabled end, function(v)
 			ZX.spin.enabled = v
+			if not v then
+				for grip, baseC1 in pairs(ZX.origGrip) do
+					if grip and grip.Parent then pcall(function() grip.C1 = baseC1 end) end
+				end
+			end
 		end, nx())
 		addStepperRow("Dönüş Hızı", function() return ZX.spin.speed end, function(v)
 			ZX.spin.speed = v
@@ -8620,6 +8800,107 @@ pcall(function()
 	})
 end)
 
+
+-- =========================================================================
+-- ZeroX v1.0.1 — 12.1) MOBİL AÇ/KAPA BUTONU (sadece dokunmatik cihaz)
+-- =========================================================================
+-- WindUI OpenButton bazı telefonlarda render olmuyor; güvenli yol
+-- kendi yüzen butonumuzu çizmek. Sadece TouchEnabled ve klavyesiz
+-- cihazlarda devreye girer, PC'de hiçbir şey değişmez.
+if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+	local mobGui = Instance.new("ScreenGui")
+	mobGui.Name = "ZeroXMobileFab"
+	mobGui.ResetOnSpawn = false
+	mobGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	local okGui = pcall(function()
+		mobGui.Parent = game:GetService("CoreGui")
+	end)
+	if not okGui or not mobGui.Parent then
+		mobGui.Parent = player:WaitForChild("PlayerGui")
+	end
+
+	local fabBtn = Instance.new("TextButton")
+	fabBtn.Size = UDim2.fromOffset(56, 56)
+	fabBtn.Position = UDim2.new(0.5, -28, 1, -120)
+	fabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+	fabBtn.Text = "ZX"
+	fabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	fabBtn.TextSize = 18
+	fabBtn.Font = Enum.Font.GothamBold
+	fabBtn.AutoButtonColor = false
+	fabBtn.ZIndex = 100
+	fabBtn.Parent = mobGui
+	pcall(function()
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(1, 0)
+		c.Parent = fabBtn
+	end)
+	pcall(function()
+		local s = Instance.new("UIStroke")
+		s.Color = Color3.fromRGB(0, 145, 255)
+		s.Thickness = 2
+		s.Parent = fabBtn
+	end)
+
+	local setBtn = Instance.new("TextButton")
+	setBtn.Size = UDim2.fromOffset(40, 40)
+	setBtn.Position = UDim2.new(0.5, 40, 1, -120)
+	setBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+	setBtn.Text = "⚙"
+	setBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
+	setBtn.TextSize = 20
+	setBtn.Font = Enum.Font.GothamBold
+	setBtn.ZIndex = 100
+	setBtn.Parent = mobGui
+	pcall(function()
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(1, 0)
+		c.Parent = setBtn
+	end)
+	pcall(function()
+		local s = Instance.new("UIStroke")
+		s.Color = Color3.fromRGB(90, 90, 110)
+		s.Thickness = 1.5
+		s.Parent = setBtn
+	end)
+
+	-- ZX butonu: sürükleme/tık ayrımı (6 px eşiği) + Window toggle
+	local dragging = false
+	local dragStart, startPos
+	local moved = false
+	fabBtn.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			moved = false
+			dragStart = input.Position
+			startPos = fabBtn.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseMovement) then
+			local delta = input.Position - dragStart
+			if delta.Magnitude > 6 then moved = true end
+			fabBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+	fabBtn.MouseButton1Click:Connect(function()
+		if moved then return end
+		pcall(function() Window:Toggle() end)
+	end)
+	setBtn.MouseButton1Click:Connect(function()
+		pcall(function()
+			if ZX.ayarlar and ZX.ayarlar.toggle then ZX.ayarlar.toggle() end
+		end)
+	end)
+end
 WindUI:Notify({
 	Title = "ZeroX v1.0.1",
 	Content = "Tüm modüller ve WindUI başarıyla yüklendi!",
