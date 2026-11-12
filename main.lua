@@ -6009,14 +6009,21 @@ ZX.applyWeaponSkin = function(tool)
 	for _, part in ipairs(tool:GetDescendants()) do
 		if part:IsA("BasePart") then
 			pcall(function()
-				if part:IsA("MeshPart") then part.TextureID = "" end
 				local mesh = part:FindFirstChildOfClass("SpecialMesh")
-				if mesh then
-					mesh.TextureId   = ""
-					mesh.VertexColor = Vector3.new(1, 1, 1)
+				if part:IsA("MeshPart") then
+					-- FIX: TextureID siliniyordu, bıçak deseni gidiyordu.
+					-- Korunur; renk part.Color ile uygulanir.
+					part.Color    = entry.color
+					part.Material = entry.mat or Enum.Material.SmoothPlastic
+				elseif mesh then
+					-- FIX: SpecialMesh FileMesh'te TextureId temizlenince
+					-- bıçağın kendi deseni yok oluyor (skin calismiyor).
+					-- TextureId SAKLANIR; renk VertexColor carpani ile basar.
+					mesh.VertexColor = Vector3.new(entry.color.R, entry.color.G, entry.color.B)
+				else
+					part.Color    = entry.color
+					part.Material = entry.mat or Enum.Material.Neon
 				end
-				part.Color    = entry.color
-				part.Material = entry.mat or Enum.Material.Neon
 			end)
 		elseif part:IsA("Decal") then
 			pcall(function()
@@ -6241,20 +6248,75 @@ do
 end
 
 -- ---------------------------------------------------------------
--- 7) DUVAR ARKASI KESİN VURUŞ (WALLBANG MICRO-TELEPORT)
 -- ---------------------------------------------------------------
-local function checkWallBetween(p1, p2, ignoreChar, targetChar)
+-- 7) DUVAR ARKASI KESİN VURUŞ (WALLBANG 1-TICK SPOOF)
+-- ---------------------------------------------------------------
+-- Derin araştırma sonucu: MM2 CreateBeam sunucusu KENDI raycast'ini
+-- aticinin sunucudaki konumundan yapar; gonderilen aim noktasina
+-- konum olarak guvenmez. Saf aim-spoof bu yuzden calismadi.
+-- Kullanilan yontem: 1-tick pozisyon spoof — kamera Scriptable'a
+-- alinir (görüntü sabit kalir), karakter duvarin hemen otesine
+-- tasinir, InvokeServer sunucu istegi isleyip donene kadar senkron
+-- bekler (iki atis da bu pencerede gider), sonra karakter eski
+-- konumuna geri konur. Tek frame'lik islem; ekranda hicbir asama
+-- gorunmez, kendini kimseye isinlatmaz.
+
+-- TRACER DUPE DUZELTMESI: ayni atis icin hem namecall hook hem
+-- fallback cizmemek icin tek cizim penceresi (0.15s) uygulanir.
+-- Böylece tracer sadece gerçek mermi yolunu çizer, katile giden
+-- atislar da duvarli/duvarsiz her zaman cizilir.
+ZX.tracerLast = {}
+ZX.tracerOnce = function(tool, target)
+	if not tool or not target then return end
+	local now = os.clock()
+	local last = ZX.tracerLast[tool]
+	if last and (now - last) < 0.15 then return end
+	ZX.tracerLast[tool] = now
+	ZX.createNeonTracer(tool, target)
+end
+
+local function getWallHit(p1, p2, ignoreChar, targetChar)
 	local dir = p2 - p1
+	if dir.Magnitude < 0.05 then return nil end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { ignoreChar }
+	params.FilterDescendantsInstances = { ignoreChar, targetChar }
 	params.IgnoreWater = true
 	params.RespectCanCollide = true
 	local res = Workspace:Raycast(p1, dir, params)
-	if res and res.Instance and not res.Instance:IsDescendantOf(targetChar) then
-		return true
+	if res and res.Instance and res.Instance:IsA("BasePart")
+		and not res.Instance:IsDescendantOf(targetChar) then
+		return res
 	end
-	return false
+	return nil
+end
+
+-- 1-tick spoof: sunucu konumunu duvarin otesine tasiyip atislari o
+-- pencerede yollar, InvokeServer dondugu an eski konuma geri konur.
+local function fireWithWallSpoof(root, entryPos, entryNormal, fireFn)
+	local oldCF = root.CFrame
+	local cam = Workspace.CurrentCamera
+	local oldCamSubject = cam.CameraSubject
+	local oldCamType = cam.CameraType
+	local spoofPos = entryPos + (entryNormal * 3.2)
+	spoofPos = Vector3.new(spoofPos.X, oldCF.Position.Y, spoofPos.Z)
+	pcall(function()
+		cam.CameraType = Enum.CameraType.Scriptable
+		root.CFrame = CFrame.new(spoofPos)
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+	end)
+	local ok = pcall(fireFn)
+	pcall(function()
+		root.CFrame = oldCF
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+	end)
+	pcall(function()
+		cam.CameraSubject = oldCamSubject
+		cam.CameraType = oldCamType
+	end)
+	return ok
 end
 
 local function executeDirectShot(gunTool)
@@ -6273,21 +6335,15 @@ local function executeDirectShot(gunTool)
 
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart")
-	local oldCF = root and root.CFrame or nil
 
-	local mRoot = murderer.Character:FindFirstChild("HumanoidRootPart") or murderer.Character:FindFirstChild("UpperTorso")
-	local isWall = root and mRoot and checkWallBetween(root.Position, mRoot.Position, char, murderer.Character)
-
-	local wallShot = (ZX.wallbang.enabled or wallbangEnabled) and true or false
-	-- ISINLAMA TAMAMEN KALDIRILDI: internetteki standart MM2 wallbang yontemi —
-	-- MM2 CreateBeam sunucusu client'in gonderdigi nisan noktasina guvenir,
-	-- kursun kendi konumumuzdan duvarin icinden gecer. Eski kod bizi katila
-	-- isinliyordu; artik hicbir yere tasınmiyoruz.
-	if root then
-		pcall(function()
-			root.CFrame = CFrame.new(root.Position, Vector3.new(aimPos.X, root.Position.Y, aimPos.Z))
-			root.AssemblyAngularVelocity = Vector3.zero
-		end)
+	local wallHit = nil
+	if root and (ZX.wallbang.enabled or wallbangEnabled) then
+		local mRoot = murderer.Character:FindFirstChild("HumanoidRootPart")
+			or murderer.Character:FindFirstChild("UpperTorso")
+			or murderer.Character:FindFirstChild("Torso")
+		if mRoot then
+			wallHit = getWallHit(root.Position, mRoot.Position, char, murderer.Character)
+		end
 	end
 
 	for grip, baseC1 in pairs(ZX.origGrip) do
@@ -6295,24 +6351,31 @@ local function executeDirectShot(gunTool)
 	end
 
 	if remoteType == "CreateBeam" then
-		pcall(function() shootRemote:InvokeServer(1, aimPos, "AH2") end)
-		if wallShot then
-			task.wait(0.05)
-			local freshAim = calculatePrecisionAim(murderer) or aimPos
-			pcall(function() shootRemote:InvokeServer(1, freshAim, "AH2") end)
+		local function fireBeams()
+			pcall(function() shootRemote:InvokeServer(1, aimPos, "AH2") end)
+			if wallHit then
+				local freshAim = calculatePrecisionAim(murderer) or aimPos
+				pcall(function() shootRemote:InvokeServer(1, freshAim, "AH2") end)
+			end
+		end
+		if wallHit and root then
+			fireWithWallSpoof(root, wallHit.Position, wallHit.Normal, fireBeams)
+		else
+			fireBeams()
 		end
 	elseif remoteType == "ShootEvent" then
 		local hand = char and (char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") or root)
-		pcall(function() shootRemote:FireServer(CFrame.new(hand.Position), CFrame.new(aimPos)) end)
-		if wallShot then
-			task.wait(0.05)
+		local fromPos = hand and hand.Position or (root and root.Position)
+		if wallHit then
+			-- ShootEvent'te from CFrame'i client gonderir: teleport gerekmez,
+			-- from'u duvarin otesinden yollariz.
+			local spoofFrom = wallHit.Position + (wallHit.Normal * 2.0)
+			pcall(function() shootRemote:FireServer(CFrame.new(spoofFrom), CFrame.new(aimPos)) end)
 			local freshAim = calculatePrecisionAim(murderer) or aimPos
-			pcall(function() shootRemote:FireServer(CFrame.new(hand.Position), CFrame.new(freshAim)) end)
+			pcall(function() shootRemote:FireServer(CFrame.new(spoofFrom), CFrame.new(freshAim)) end)
+		else
+			pcall(function() shootRemote:FireServer(CFrame.new(fromPos), CFrame.new(aimPos)) end)
 		end
-	end
-
-	if ZX.tracer.enabled then
-		ZX.createNeonTracer(gunTool, aimPos)
 	end
 
 	task.delay(0.12, function()
@@ -6322,7 +6385,6 @@ local function executeDirectShot(gunTool)
 	end)
 	return true
 end
-
 -- Tool Hook
 do
 	local function onGunActivated(tool)
@@ -6345,7 +6407,7 @@ do
 				params.IgnoreWater = true
 				local hit = Workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
 				local targetPos = hit and hit.Position or (ray.Origin + ray.Direction * 1000)
-				ZX.createNeonTracer(tool, targetPos)
+				ZX.tracerOnce(tool, targetPos)
 			end
 		end
 	end
@@ -6897,7 +6959,7 @@ do
 										target = a.Position
 									end
 								end
-								if target then ZX.createNeonTracer(tool, target) end
+								if target then ZX.tracerOnce(tool, target) end
 							end
 						end
 					end)
@@ -6909,6 +6971,294 @@ do
 			setreadonly(mt, true)
 		end)
 	end
+end
+
+-- ---------------------------------------------------------------
+-- =========================================================================
+-- ZeroX v1.0.1 — 11.6) HITBOX IŞINLANMA DÜZELTMESİ (HRP NORMALİZASYONU)
+-- =========================================================================
+-- Orijinal hitbox motoru hedefin HumanoidRootPart'ini de hitboxSize^3
+-- buyutuyor. HRP Humanoid'in fizik gövdesi; dev HRP fizik adiminda
+-- karaktere çarparak seni itiyor/firlatiyor ("adamaya ışınlanıyorum"
+-- hissi). 951b1fa surumundeki hitbox motoru birebir ayni (diff: 0),
+-- duzeltme burada hub tarafinda: HRP her fizik adimindan ONCE normal
+-- boyuta dondurulur (Stepped, orijinal buyutme dongusunden sonra
+-- calisir), gövde kutulari (Torso/UpperTorso) buyuk kalir ama
+-- Massless olur — reach firetouchinterest ile yine calisir, fizik
+-- push olmaz.
+do
+	RunService.Stepped:Connect(function()
+		if not hitboxEnabled then return end
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player and p.Character then
+				local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+				if hrp and hrp:IsA("BasePart") and hrp.Size.X > 3 then
+					hrp.Size = Vector3.new(2, 2, 1)
+					hrp.Transparency = 1
+					hrp.CanCollide = false
+				end
+				for _, pn in ipairs({ "UpperTorso", "Torso" }) do
+					local part = p.Character:FindFirstChild(pn)
+					if part and part:IsA("BasePart") and part.Size.X > 3 then
+						part.CanCollide = false
+						part.Massless = true
+					end
+				end
+			end
+		end
+	end)
+end
+
+-- =========================================================================
+-- ZeroX v1.0.1 — 11.7) ANTI FLING (INFINITE YIELD "antifling" STİLİ)
+-- =========================================================================
+-- IY kaynagindan alindi: RunService.Stepped dongusunde diger tum
+-- oyuncularin BasePart'lari CanCollide = false yapilir; boylece bize
+-- fizik ivmesi aktaramaz, karakterleriyle firlatamazlar.
+ZX.antifling = { enabled = false }
+do
+	RunService.Stepped:Connect(function()
+		if not ZX.antifling.enabled then return end
+		for _, otherPlr in ipairs(Players:GetPlayers()) do
+			if otherPlr ~= player and otherPlr.Character then
+				for _, part in ipairs(otherPlr.Character:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.CanCollide = false
+					end
+				end
+			end
+		end
+	end)
+end
+
+-- =========================================================================
+-- ZeroX v1.0.1 — 11.8) ZX ESP MOTORU (KÖŞE KUTUSU + SKELETON)
+-- =========================================================================
+-- Eski Highlight ESP (updateAllESP) karakterin uzerine dolgulu blok
+-- basiyordu. Bu motor kutunun SADECE köşe çizgilerini ve karakterin
+-- animasyonuna uyup takip eden iskelet çizgilerini RenderStepped'te
+-- cizer: kafa-torso, omuz-dirsek-el, kalca-diz-ayak. Part pozisyonlari
+-- her frame gercekten okundugu icin animasyon otomatik takip edilir.
+ZX.esp = {
+	enabled  = false,
+	murderer = true,
+	sheriff  = true,
+	innocent = true,
+	box      = true,
+	skeleton = true,
+	names    = true,
+}
+
+do
+	local R15_PAIRS = {
+		{ "Head", "UpperTorso" },
+		{ "UpperTorso", "LowerTorso" },
+		{ "UpperTorso", "LeftUpperArm" },
+		{ "LeftUpperArm", "LeftLowerArm" },
+		{ "LeftLowerArm", "LeftHand" },
+		{ "UpperTorso", "RightUpperArm" },
+		{ "RightUpperArm", "RightLowerArm" },
+		{ "RightLowerArm", "RightHand" },
+		{ "LowerTorso", "LeftUpperLeg" },
+		{ "LeftUpperLeg", "LeftLowerLeg" },
+		{ "LeftLowerLeg", "LeftFoot" },
+		{ "LowerTorso", "RightUpperLeg" },
+		{ "RightUpperLeg", "RightLowerLeg" },
+		{ "RightLowerLeg", "RightFoot" },
+	}
+	local R6_PAIRS = {
+		{ "Head", "Torso" },
+		{ "Torso", "Left Arm" },
+		{ "Torso", "Right Arm" },
+		{ "Torso", "Left Leg" },
+		{ "Torso", "Right Leg" },
+	}
+	local MAX_SKEL = #R15_PAIRS
+
+	local ESPGUI = espDrawingGui or player:FindFirstChildOfClass("PlayerGui")
+	if not ESPGUI then return end
+
+	local function newLineFrame(zindex)
+		local f = Instance.new("Frame")
+		f.BorderSizePixel = 0
+		f.BackgroundColor3 = Color3.new(1, 1, 1)
+		f.ZIndex = zindex
+		f.Visible = false
+		f.Parent = ESPGUI
+		return f
+	end
+
+	local function drawLine(frame, a, b, color, thickness)
+		local dx, dy = b.X - a.X, b.Y - a.Y
+		local dist = math.sqrt(dx * dx + dy * dy)
+		if dist < 1 then
+			frame.Visible = false
+			return
+		end
+		frame.Size     = UDim2.new(0, dist, 0, thickness)
+		frame.Position = UDim2.new(0, (a.X + b.X) * 0.5, 0, (a.Y + b.Y) * 0.5)
+		frame.Rotation = math.deg(math.atan2(dy, dx))
+		frame.BackgroundColor3 = color
+		frame.Visible  = true
+	end
+
+	local visuals = {}
+
+	local function getVis(plr)
+		local v = visuals[plr]
+		if not v then
+			v = { corners = {}, skel = {}, label = nil }
+			for i = 1, 8 do v.corners[i] = newLineFrame(48) end
+			for i = 1, MAX_SKEL do v.skel[i] = newLineFrame(47) end
+			visuals[plr] = v
+		end
+		return v
+	end
+
+	local function hideVis(v)
+		for _, f in ipairs(v.corners) do f.Visible = false end
+		for _, f in ipairs(v.skel) do f.Visible = false end
+		if v.label then v.label.Visible = false end
+	end
+
+	local function getLabel(v)
+		if not v.label then
+			local l = Instance.new("TextLabel")
+			l.BackgroundTransparency = 1
+			l.Font = Enum.Font.GothamBold
+			l.TextSize = 13
+			l.AnchorPoint = Vector2.new(0.5, 1)
+			l.Size = UDim2.new(0, 220, 0, 18)
+			l.ZIndex = 50
+			l.Parent = ESPGUI
+			v.label = l
+		end
+		return v.label
+	end
+
+	local function roleInfo(p)
+		local ok, role = pcall(getRole, p)
+		if not ok or not role then return nil end
+		if role == "Murderer" and ZX.esp.murderer then
+			return Color3.fromRGB(255, 45, 45), "Katil"
+		elseif role == "Sheriff" and ZX.esp.sheriff then
+			return Color3.fromRGB(45, 120, 255), "Şerif"
+		elseif role == "Innocent" and ZX.esp.innocent then
+			return Color3.fromRGB(45, 255, 110), "Masum"
+		end
+		return nil
+	end
+
+	local cam = Workspace.CurrentCamera
+
+	local function project(pos)
+		local sp, onScreen = cam:WorldToViewportPoint(pos)
+		if not onScreen or sp.Z <= 0 then return nil end
+		return Vector2.new(sp.X, sp.Y)
+	end
+
+	RunService.RenderStepped:Connect(function()
+		cam = Workspace.CurrentCamera or cam
+		if not ZX.esp.enabled then return end
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player then
+				local v = getVis(p)
+				local color, tag = roleInfo(p)
+				local char = p.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				local head = char and char:FindFirstChild("Head")
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				if not color or not char or not root or not head
+					or not root:IsDescendantOf(Workspace)
+					or (hum and hum.Health <= 0) then
+					hideVis(v)
+				else
+					-- KÖŞE KUTUSU: dolgu yok, sadece 4 köşe x 2 kısa çizgi
+					if ZX.esp.box then
+						local top = project(head.Position + Vector3.new(0, 0.9, 0))
+						local bot = project(root.Position - Vector3.new(0, 2.9, 0))
+						if top and bot and (bot.Y - top.Y) > 10 then
+							local h = bot.Y - top.Y
+							local w = math.max(h * 0.45, 14)
+							local len = math.max(h * 0.28, 5)
+							local cx = (top.X + bot.X) * 0.5
+							local cy = (top.Y + bot.Y) * 0.5
+							local halfW, halfH = w * 0.5, h * 0.5
+							-- sirayla: TL, TR, BL, BR (çizgiler kutu içine bakar)
+							local px = { cx - halfW, cx + halfW, cx - halfW, cx + halfW }
+							local py = { cy - halfH, cy - halfH, cy + halfH, cy + halfH }
+							local dxx = { 1, -1, 1, -1 }
+							local dyy = { 1, 1, -1, -1 }
+							for i = 1, 4 do
+								local pos = Vector2.new(px[i], py[i])
+								drawLine(v.corners[(i - 1) * 2 + 1],
+									pos, Vector2.new(pos.X + dxx[i] * len, pos.Y), color, 2)
+								drawLine(v.corners[(i - 1) * 2 + 2],
+									pos, Vector2.new(pos.X, pos.Y + dyy[i] * len), color, 2)
+							end
+						else
+							for _, f in ipairs(v.corners) do f.Visible = false end
+						end
+					else
+						for _, f in ipairs(v.corners) do f.Visible = false end
+					end
+
+					-- SKELETON: animasyona uyan gerçek iskelet çizgileri
+					if ZX.esp.skeleton then
+						local rig = (char:FindFirstChild("UpperTorso") and R15_PAIRS)
+							or (char:FindFirstChild("Torso") and R6_PAIRS)
+							or nil
+						local drawn = 0
+						if rig then
+							for _, pair in ipairs(rig) do
+								local pa = char:FindFirstChild(pair[1])
+								local pb = char:FindFirstChild(pair[2])
+								if pa and pb and pa:IsA("BasePart") and pb:IsA("BasePart") then
+									local sa = project(pa.Position)
+									local sb = project(pb.Position)
+									if sa and sb then
+										drawn = drawn + 1
+										drawLine(v.skel[drawn], sa, sb, color, 1.5)
+									end
+								end
+							end
+						end
+						for i = drawn + 1, MAX_SKEL do
+							v.skel[i].Visible = false
+						end
+					else
+						for _, f in ipairs(v.skel) do f.Visible = false end
+					end
+
+					-- ISIM
+					if ZX.esp.names then
+						local lp = project(head.Position + Vector3.new(0, 1.9, 0))
+						if lp then
+							local l = getLabel(v)
+							l.Visible = true
+							l.Position = UDim2.new(0, lp.X, 0, lp.Y)
+							l.TextColor3 = color
+							l.Text = tag .. " — " .. (p.DisplayName or p.Name)
+						else
+							if v.label then v.label.Visible = false end
+						end
+					else
+						if v.label then v.label.Visible = false end
+					end
+				end
+			end
+		end
+	end)
+
+	Players.PlayerRemoving:Connect(function(plr)
+		local v = visuals[plr]
+		if v then
+			for _, f in ipairs(v.corners) do pcall(function() f:Destroy() end) end
+			for _, f in ipairs(v.skel) do pcall(function() f:Destroy() end) end
+			if v.label then pcall(function() v.label:Destroy() end) end
+			visuals[plr] = nil
+		end
+	end)
 end
 
 -- ---------------------------------------------------------------
@@ -7140,38 +7490,60 @@ local MM2EspSection = CombatTab:Section({ Title = "MM2 Rol ESP" })
 
 MM2EspSection:Toggle({
 	Title = "MM2 Rol ESP Aktif",
-	Desc = "Katil ve Şerif rollerini renkli kutuyla gösterir",
-	Value = mm2EspEnabled or false,
+	Desc = "Köşe kutusu + skeleton motoru. Katil kırmızı, Şerif mavi, Masum yeşil",
+	Value = false,
 	Callback = function(v)
-		mm2EspEnabled = v
-		pcall(updateAllESP)
+		ZX.esp.enabled = v
 	end,
 })
 
 MM2EspSection:Toggle({
 	Title = "Katil ESP",
-	Value = (mm2EspFlags and mm2EspFlags.MurdererESP) or true,
+	Value = ZX.esp.murderer,
 	Callback = function(v)
-		if mm2EspFlags then mm2EspFlags.MurdererESP = v end
-		pcall(updateAllESP)
+		ZX.esp.murderer = v
 	end,
 })
 
 MM2EspSection:Toggle({
 	Title = "Şerif ESP",
-	Value = (mm2EspFlags and mm2EspFlags.SheriffESP) or true,
+	Value = ZX.esp.sheriff,
 	Callback = function(v)
-		if mm2EspFlags then mm2EspFlags.SheriffESP = v end
-		pcall(updateAllESP)
+		ZX.esp.sheriff = v
 	end,
 })
 
 MM2EspSection:Toggle({
 	Title = "Masum ESP",
-	Value = (mm2EspFlags and mm2EspFlags.InnocentESP) or true,
+	Value = ZX.esp.innocent,
 	Callback = function(v)
-		if mm2EspFlags then mm2EspFlags.InnocentESP = v end
-		pcall(updateAllESP)
+		ZX.esp.innocent = v
+	end,
+})
+
+MM2EspSection:Toggle({
+	Title = "Kutu (Köşe Çizgileri)",
+	Desc = "Kutunun dolgusu yok, sadece köşelerde kısa çizgiler",
+	Value = ZX.esp.box,
+	Callback = function(v)
+		ZX.esp.box = v
+	end,
+})
+
+MM2EspSection:Toggle({
+	Title = "Skeleton",
+	Desc = "Kafa, torso, kollar ve bacaklar — animasyona uyarak takip eder",
+	Value = ZX.esp.skeleton,
+	Callback = function(v)
+		ZX.esp.skeleton = v
+	end,
+})
+
+MM2EspSection:Toggle({
+	Title = "İsim Göster",
+	Value = ZX.esp.names,
+	Callback = function(v)
+		ZX.esp.names = v
 	end,
 })
 
@@ -7376,6 +7748,15 @@ MoveSection:Slider({
 	Value = { Min = 4, Max = 14, Default = 8 },
 	Callback = function(v)
 		ZX.move.maxTouchReach = v
+	end,
+})
+
+MoveSection:Toggle({
+	Title = "Anti Fling (IY Stili)",
+	Desc = "Infinite Yield antifling: diğer oyuncuların karakterlerine çarpışma kapatılır, seni fırlatamazlar",
+	Value = false,
+	Callback = function(v)
+		ZX.antifling.enabled = v
 	end,
 })
 
@@ -8184,21 +8565,17 @@ pcall(function()
 
 		-- MM2 ESP
 		addHeaderRow("MM2 ESP", nx())
-		addToggleRow("MM2 Rol ESP", function() return mm2EspEnabled end, function(v)
-			mm2EspEnabled = v
-			pcall(updateAllESP)
+		addToggleRow("MM2 Rol ESP", function() return ZX.esp.enabled end, function(v)
+			ZX.esp.enabled = v
 		end, nx())
-		addToggleRow("Katil ESP", function() return mm2EspFlags.MurdererESP end, function(v)
-			if mm2EspFlags then mm2EspFlags.MurdererESP = v end
-			pcall(updateAllESP)
+		addToggleRow("Katil ESP", function() return ZX.esp.murderer end, function(v)
+			ZX.esp.murderer = v
 		end, nx())
-		addToggleRow("Şerif ESP", function() return mm2EspFlags.SheriffESP end, function(v)
-			if mm2EspFlags then mm2EspFlags.SheriffESP = v end
-			pcall(updateAllESP)
+		addToggleRow("Şerif ESP", function() return ZX.esp.sheriff end, function(v)
+			ZX.esp.sheriff = v
 		end, nx())
-		addToggleRow("Masum ESP", function() return mm2EspFlags.InnocentESP end, function(v)
-			if mm2EspFlags then mm2EspFlags.InnocentESP = v end
-			pcall(updateAllESP)
+		addToggleRow("Masum ESP", function() return ZX.esp.innocent end, function(v)
+			ZX.esp.innocent = v
 		end, nx())
 		addToggleRow("Düşen Silah ESP", function() return mm2EspFlags.GunDropESP end, function(v)
 			if mm2EspFlags then mm2EspFlags.GunDropESP = v end
