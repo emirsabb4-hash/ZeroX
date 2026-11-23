@@ -5842,7 +5842,7 @@ end
 end
 
 -- =========================================================================
--- 8.5) CUSTOM KILL & SHOOT SOUNDS (Murderer Restart + Sheriff Shoot Override)
+-- 8.5) CUSTOM KILL & SHOOT SOUNDS (PulseHub CustomSounds Method)
 -- =========================================================================
 local playMurdererKillSound
 local playSheriffKillSound
@@ -5875,31 +5875,26 @@ do
 
 	local activeMurdSound = nil
 	local lastSherPlayAt = 0
+	local mutedSounds = {}
+	local watchedSounds = {}
+	local watchedGun = nil
+	local gunDescConn = nil
 
-	local function playSoundAsset(id, nameTag, stopPrevRef)
+	local function playSoundAsset(id, nameTag)
 		if not id then return nil end
 		local s = Instance.new("Sound")
 		s.Name = nameTag
 		s.SoundId = id
-		s.Volume = math.clamp((tonumber(ZX.sounds.volume) or 80) / 100 * 1.5, 0, 3)
+		s.Volume = math.clamp((tonumber(ZX.sounds.volume) or 80) / 100 * 3, 0, 5)
+		s.PlayOnRemove = false
 		s.Looped = false
 		s.Parent = SoundService
+		pcall(function() s:Play() end)
 		s.Ended:Connect(function()
 			pcall(function() s:Destroy() end)
 		end)
-		task.spawn(function()
-			if not s.IsLoaded then
-				pcall(function() s.Loaded:Wait() end)
-			end
-			if s.Parent then
-				pcall(function() SoundService:PlayLocalSound(s) end)
-				pcall(function() s:Play() end)
-			end
-		end)
 		task.delay(8, function()
-			if s and s.Parent and not s.IsPlaying then
-				pcall(function() s:Destroy() end)
-			end
+			if s and s.Parent then pcall(function() s:Destroy() end) end
 		end)
 		return s
 	end
@@ -5907,7 +5902,6 @@ do
 	playMurdererKillSound = function()
 		local id = MURDERER_SOUNDS[ZX.sounds.murdererKill]
 		if not id then return end
-		-- Önceki ses bitmeden yeni biri ölürse durdur ve baştan başlat
 		if activeMurdSound then
 			pcall(function() activeMurdSound:Stop() end)
 			pcall(function() activeMurdSound:Destroy() end)
@@ -5919,29 +5913,124 @@ do
 	playSheriffKillSound = function()
 		local id = SHERIFF_SOUNDS[ZX.sounds.sheriffKill]
 		if not id then return end
-		if os.clock() - lastSherPlayAt < 0.25 then return end
+		if os.clock() - lastSherPlayAt < 0.15 then return end
 		lastSherPlayAt = os.clock()
 		playSoundAsset(id, "CH_SheriffShootSound")
 	end
 
-	local mutedTools = setmetatable({}, { __mode = "k" })
-	muteGunSounds = function(gunTool)
-		if not gunTool or ZX.sounds.sheriffKill == "Default" then return end
-		local function silence(s)
-			if s:IsA("Sound") and not s.Name:find("^CH_") then
-				pcall(function() s.Volume = 0 s:Stop() end)
+	-- PulseHub CustomSounds.shouldMute & Volume Lock (gunshot / reload / gunkill)
+	local function shouldMuteSound(s)
+		if ZX.sounds.sheriffKill == "Default" then return false end
+		local n = string.lower(s.Name)
+		return n == "gunshot" or n == "reload" or n == "gunkill"
+	end
+
+	local function watchSound(s)
+		if not s or not s:IsA("Sound") or s.Name:find("^CH_") then return end
+		if shouldMuteSound(s) then
+			if not mutedSounds[s] then
+				mutedSounds[s] = { vol = s.Volume }
 			end
-		end
-		pcall(function()
-			for _, d in ipairs(gunTool:GetDescendants()) do silence(d) end
-			if not mutedTools[gunTool] then
-				mutedTools[gunTool] = true
-				gunTool.DescendantAdded:Connect(function(d)
-					if ZX.sounds.sheriffKill ~= "Default" then silence(d) end
+			if not watchedSounds[s] then
+				watchedSounds[s] = true
+				pcall(function()
+					s:GetPropertyChangedSignal("Volume"):Connect(function()
+						local saved = mutedSounds[s]
+						if saved and s.Volume ~= 0 then
+							saved.vol = s.Volume
+							s.Volume = 0
+						end
+					end)
 				end)
 			end
-		end)
+			if s.Volume ~= 0 then
+				pcall(function() s.Volume = 0 end)
+			end
+		else
+			local saved = mutedSounds[s]
+			if saved then
+				mutedSounds[s] = nil
+				pcall(function() s.Volume = saved.vol end)
+			end
+		end
 	end
+
+	local function findLocalGunAny()
+		local c = player.Character
+		if c then
+			for _, t in ipairs(c:GetChildren()) do
+				if t:IsA("Tool") and weaponKind(t) == "Gun" then return t end
+			end
+		end
+		local bp = player:FindFirstChild("Backpack")
+		if bp then
+			for _, t in ipairs(bp:GetChildren()) do
+				if t:IsA("Tool") and weaponKind(t) == "Gun" then return t end
+			end
+		end
+		return nil
+	end
+
+	local function refreshMutedGun()
+		for s, saved in pairs(mutedSounds) do
+			if not s.Parent then
+				mutedSounds[s] = nil
+				watchedSounds[s] = nil
+			elseif not shouldMuteSound(s) then
+				mutedSounds[s] = nil
+				pcall(function() s.Volume = saved.vol end)
+			end
+		end
+		for s in pairs(watchedSounds) do
+			if not s.Parent then watchedSounds[s] = nil end
+		end
+		local gun = findLocalGunAny()
+		if not gun then return end
+		if watchedGun ~= gun then
+			if gunDescConn then pcall(function() gunDescConn:Disconnect() end) end
+			watchedGun = gun
+			gunDescConn = gun.DescendantAdded:Connect(function(d)
+				if d:IsA("Sound") then watchSound(d) end
+			end)
+		end
+		for _, d in ipairs(gun:GetDescendants()) do
+			if d:IsA("Sound") then watchSound(d) end
+		end
+	end
+
+	muteGunSounds = function(gunTool)
+		if not gunTool then return end
+		for _, d in ipairs(gunTool:GetDescendants()) do
+			if d:IsA("Sound") then watchSound(d) end
+		end
+	end
+
+	-- PulseHub 0.25sn Gun Sound Refresh Döngüsü
+	task.spawn(function()
+		while true do
+			task.wait(0.25)
+			if ZX.sounds.sheriffKill ~= "Default" or next(mutedSounds) ~= nil then
+				pcall(refreshMutedGun)
+			end
+		end
+	end)
+
+	-- PulseHub WeaponService.GunFired Hook (Manuel veya Silent atış anında tetikler)
+	task.spawn(function()
+		local services = ReplicatedStorage:WaitForChild("ClientServices", 30)
+		local weapons = services and services:WaitForChild("WeaponService", 30)
+		local fired = weapons and weapons:WaitForChild("GunFired", 30)
+		if not fired or not fired:IsA("RemoteEvent") then return end
+		fired.OnClientEvent:Connect(function(tool, origin, endpoint, hit)
+			local char = player.Character
+			if not char or not tool or typeof(tool) ~= "Instance" then return end
+			if not tool:IsDescendantOf(char) then return end
+			if ZX.sounds.sheriffKill ~= "Default" then
+				playSheriffKillSound()
+				pcall(refreshMutedGun)
+			end
+		end)
+	end)
 
 	local function hasLocalWeapon(kindName)
 		local c = player.Character
@@ -5958,24 +6047,6 @@ do
 		end
 		return false
 	end
-
-	-- Dinamik olarak Workspace / Character / SoundService içine eklenen MM2 silah seslerini sustur
-	local function handleDynamicSound(s)
-		if not s or not s:IsA("Sound") or s.Name:find("^CH_") then return end
-		if ZX.sounds.sheriffKill == "Default" then return end
-		local ln = s.Name:lower()
-		if ln:find("shoot") or ln:find("fire") or ln:find("gun") or ln:find("bang") or ln:find("revolver") then
-			if hasLocalWeapon("Gun") or getRole(player) == "Sheriff" then
-				pcall(function() s.Volume = 0 s:Stop() end)
-			end
-		end
-	end
-	SoundService.DescendantAdded:Connect(handleDynamicSound)
-	Workspace.DescendantAdded:Connect(function(d)
-		if d:IsA("Sound") and (not player.Character or d:IsDescendantOf(player.Character)) then
-			handleDynamicSound(d)
-		end
-	end)
 
 	local hookedChars = setmetatable({}, { __mode = "k" })
 	local function hookPlayerDeath(p)
