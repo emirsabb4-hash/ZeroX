@@ -932,6 +932,8 @@ do
 				end
 			end
 
+			if muteGunSounds then muteGunSounds(gunTool) end
+			if playSheriffKillSound then playSheriffKillSound() end
 			pcall(function()
 				local shootEv = gunTool:FindFirstChild("Shoot", true)
 				if shootEv and shootEv:IsA("RemoteEvent") then
@@ -973,7 +975,12 @@ do
 				gc.Enabled = false
 			end
 		end)
+		tool.Equipped:Connect(function()
+			if muteGunSounds then muteGunSounds(tool) end
+		end)
 		tool.Activated:Connect(function()
+			if muteGunSounds then muteGunSounds(tool) end
+			if playSheriffKillSound then playSheriffKillSound() end
 			if ZX.combat.wallbang then
 				fireAtMurderer(tool)
 			end
@@ -2324,24 +2331,67 @@ end
 
 
 -- =========================================================================
--- 8.5) CUSTOM KILL & SHOOT SOUNDS (Murderer Restart + Sheriff Single-Play)
+-- 8.5) CUSTOM KILL & SHOOT SOUNDS (Murderer Restart + Sheriff Shoot Override)
 -- =========================================================================
 local playMurdererKillSound
 local playSheriffKillSound
+local muteGunSounds
 do
 	local SoundService = game:GetService("SoundService")
 	local MURDERER_SOUNDS = {
-		Default = nil,
-		HolyShit = "rbxassetid://72215662025854",
+		Default    = nil,
+		HolyShit   = "rbxassetid://72215662025854",
+		Slash      = "rbxassetid://5989945551",
+		FleshSlash = "rbxassetid://9114486308",
+		Stab       = "rbxassetid://9116197517",
+		BoneCrush  = "rbxassetid://9113546532",
+		Boom       = "rbxassetid://157878578",
+		Void       = "rbxassetid://6737582625",
+		Shatter    = "rbxassetid://2174790942",
+		Thunder    = "rbxassetid://1079408535",
+		Demon      = "rbxassetid://9114038247",
+		Fireball   = "rbxassetid://9117985933",
+		Explode    = "rbxassetid://130118643084565",
+		Bell       = "rbxassetid://1034263055",
 	}
 	local SHERIFF_SOUNDS = {
-		Default = nil,
-		Rampage = "rbxassetid://80741697609140",
+		Default  = nil,
+		Rampage  = "rbxassetid://80741697609140",
 		Velocity = "rbxassetid://108543399583882",
+		Sniper   = "rbxassetid://15666290706",
+		Laser    = "rbxassetid://9116225555",
 	}
 
 	local activeMurdSound = nil
-	local activeSherSound = nil
+	local lastSherPlayAt = 0
+
+	local function playSoundAsset(id, nameTag, stopPrevRef)
+		if not id then return nil end
+		local s = Instance.new("Sound")
+		s.Name = nameTag
+		s.SoundId = id
+		s.Volume = math.clamp((tonumber(ZX.sounds.volume) or 80) / 100 * 1.5, 0, 3)
+		s.Looped = false
+		s.Parent = SoundService
+		s.Ended:Connect(function()
+			pcall(function() s:Destroy() end)
+		end)
+		task.spawn(function()
+			if not s.IsLoaded then
+				pcall(function() s.Loaded:Wait() end)
+			end
+			if s.Parent then
+				pcall(function() SoundService:PlayLocalSound(s) end)
+				pcall(function() s:Play() end)
+			end
+		end)
+		task.delay(8, function()
+			if s and s.Parent and not s.IsPlaying then
+				pcall(function() s:Destroy() end)
+			end
+		end)
+		return s
+	end
 
 	playMurdererKillSound = function()
 		local id = MURDERER_SOUNDS[ZX.sounds.murdererKill]
@@ -2352,39 +2402,45 @@ do
 			pcall(function() activeMurdSound:Destroy() end)
 			activeMurdSound = nil
 		end
-		local s = Instance.new("Sound")
-		s.Name = "CH_MurdererKillSound"
-		s.SoundId = id
-		s.Volume = math.clamp((tonumber(ZX.sounds.volume) or 80) / 100, 0, 2)
-		s.Parent = SoundService
-		activeMurdSound = s
-		s.Ended:Connect(function()
-			if activeMurdSound == s then activeMurdSound = nil end
-			pcall(function() s:Destroy() end)
-		end)
-		pcall(function() s:Play() end)
+		activeMurdSound = playSoundAsset(id, "CH_MurdererKillSound")
 	end
 
 	playSheriffKillSound = function()
 		local id = SHERIFF_SOUNDS[ZX.sounds.sheriffKill]
 		if not id then return end
-		-- Şerifte tek defa çalar ve biter
-		if activeSherSound and activeSherSound.IsPlaying then return end
-		local s = Instance.new("Sound")
-		s.Name = "CH_SheriffKillSound"
-		s.SoundId = id
-		s.Volume = math.clamp((tonumber(ZX.sounds.volume) or 80) / 100, 0, 2)
-		s.Parent = SoundService
-		activeSherSound = s
-		s.Ended:Connect(function()
-			if activeSherSound == s then activeSherSound = nil end
-			pcall(function() s:Destroy() end)
+		if os.clock() - lastSherPlayAt < 0.25 then return end
+		lastSherPlayAt = os.clock()
+		playSoundAsset(id, "CH_SheriffShootSound")
+	end
+
+	muteGunSounds = function(gunTool)
+		if not gunTool or ZX.sounds.sheriffKill == "Default" then return end
+		pcall(function()
+			for _, d in ipairs(gunTool:GetDescendants()) do
+				if d:IsA("Sound") then
+					d.Volume = 0
+				end
+			end
 		end)
-		pcall(function() s:Play() end)
+	end
+
+	local function hasLocalKnife()
+		local c = player.Character
+		if c then
+			for _, t in ipairs(c:GetChildren()) do
+				if t:IsA("Tool") and weaponKind(t) == "Knife" then return true end
+			end
+		end
+		local bp = player:FindFirstChild("Backpack")
+		if bp then
+			for _, t in ipairs(bp:GetChildren()) do
+				if t:IsA("Tool") and weaponKind(t) == "Knife" then return true end
+			end
+		end
+		return false
 	end
 
 	local hookedChars = setmetatable({}, { __mode = "k" })
-	local lastSherKillAt = 0
 	local function hookPlayerDeath(p)
 		if not p or p == player then return end
 		local function bindChar(c)
@@ -2397,15 +2453,10 @@ do
 				local function onDied()
 					if triggered then return end
 					triggered = true
-					if not hasActiveRound() or isInLobbyZone(c) then return end
+					if player.Character and isInLobbyZone(player.Character) then return end
 					local myRole = getRole(player)
-					if myRole == "Murderer" then
+					if myRole == "Murderer" or hasLocalKnife() then
 						playMurdererKillSound()
-					elseif myRole == "Sheriff" and getRole(p) == "Murderer" then
-						if os.clock() - lastSherKillAt > 0.5 then
-							lastSherKillAt = os.clock()
-							playSheriffKillSound()
-						end
 					end
 				end
 				h.Died:Connect(onDied)
@@ -4450,7 +4501,8 @@ end
 function visualsui:roster()
 	local out = {}
 
-	if type(listfiles) ~= "function" or not vault() then
+	local isCelestial = type(identifyexecutor) == "function" and tostring((identifyexecutor())) == "Celestial"
+	if isCelestial or type(listfiles) ~= "function" or not vault() then
 		return out
 	end
 
@@ -4811,8 +4863,9 @@ for _, entry in next, type(ASSETS) == "table" and {} or pulllist("cursors/") do
 	end
 end
 
+local _isCelestialExec = type(identifyexecutor) == "function" and tostring((identifyexecutor())) == "Celestial"
 for _, dir in next, { "visualsui/cursors", "cursors" } do
-	if slap(isfolder, dir) and type(listfiles) == "function" and type(getcustomasset) == "function" then
+	if not _isCelestialExec and slap(isfolder, dir) and type(listfiles) == "function" and type(getcustomasset) == "function" then
 		for _, f in next, slap(listfiles, dir) or {} do
 			local nm = string.match(string.gsub(tostring(f), "\\", "/"), "([^/]+)%.png$")
 
@@ -19482,12 +19535,12 @@ do
 
 	local sndSec = MM2Group.Sounds:AddSection({ Name = "Kill Sounds", Position = "left" })
 	uiRefs.sounds_murderer = sndSec:AddLabel("Murderer Kill Sound"):AddDropdown({
-		Values = { "Default", "HolyShit" },
+		Values = { "Default", "HolyShit", "Slash", "FleshSlash", "Stab", "BoneCrush", "Boom", "Void", "Shatter", "Thunder", "Demon", "Fireball", "Explode", "Bell" },
 		Default = ZX.sounds.murdererKill,
 		Callback = function(v) if type(v) == "string" then ZX.sounds.murdererKill = v end end,
 	})
 	uiRefs.sounds_sheriff = sndSec:AddLabel("Sheriff Kill Sound"):AddDropdown({
-		Values = { "Default", "Rampage", "Velocity" },
+		Values = { "Default", "Rampage", "Velocity", "Sniper", "Laser" },
 		Default = ZX.sounds.sheriffKill,
 		Callback = function(v) if type(v) == "string" then ZX.sounds.sheriffKill = v end end,
 	})
@@ -19644,18 +19697,37 @@ do
 			return n
 		end
 
-		local function listSavedConfigs()
+		local INDEX_PATH = CFG_DIR .. "/_index.json"
+
+		local function readConfigIndex()
 			local out = {}
-			ensureDir()
-			if type(listfiles) == "function" then
-				local ok, files = pcall(listfiles, CFG_DIR)
-				if ok and type(files) == "table" then
-					for _, f in ipairs(files) do
-						local nm = tostring(f):match("([^/\\]+)%.json$")
-						if nm then table.insert(out, nm) end
+			if type(readfile) == "function" and type(isfile) == "function" then
+				local okHas, has = pcall(isfile, INDEX_PATH)
+				if okHas and has then
+					local okR, raw = pcall(readfile, INDEX_PATH)
+					if okR and type(raw) == "string" then
+						local okJ, arr = pcall(function() return HttpService:JSONDecode(raw) end)
+						if okJ and type(arr) == "table" then
+							for _, v in ipairs(arr) do
+								if type(v) == "string" and v ~= "" then table.insert(out, v) end
+							end
+						end
 					end
 				end
 			end
+			return out
+		end
+
+		local function writeConfigIndex(list)
+			if type(writefile) == "function" then
+				ensureDir()
+				pcall(writefile, INDEX_PATH, HttpService:JSONEncode(list))
+			end
+		end
+
+		local function listSavedConfigs()
+			local out = readConfigIndex()
+			ensureDir()
 			if loaderData and type(loaderData.configs) == "table" then
 				for k, _ in pairs(loaderData.configs) do
 					local found = false
@@ -19827,6 +19899,10 @@ do
 				local name = sanitizeName(typedName)
 				local json = HttpService:JSONEncode(collectConfig())
 				pcall(writefile, CFG_DIR .. "/" .. name .. ".json", json)
+				local idx = readConfigIndex()
+				local exists = false
+				for _, v in ipairs(idx) do if v == name then exists = true break end end
+				if not exists then table.insert(idx, name); writeConfigIndex(idx) end
 				selectedConfig = name
 				pcall(function() cfgDropdown:SetValues(listSavedConfigs()) end)
 				pcall(function() cfgDropdown:SetValue(name) end)
@@ -19855,6 +19931,11 @@ do
 				if type(delfile) == "function" then
 					pcall(delfile, CFG_DIR .. "/" .. name .. ".json")
 				end
+				local idx = {}
+				for _, v in ipairs(readConfigIndex()) do
+					if v ~= name then table.insert(idx, v) end
+				end
+				writeConfigIndex(idx)
 				local list = listSavedConfigs()
 				selectedConfig = list[1] or "default"
 				pcall(function() cfgDropdown:SetValues(list) end)
