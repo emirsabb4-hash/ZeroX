@@ -55,6 +55,7 @@ local ZX = {
 		killAura    = false,
 		spinbot     = false,
 		spinSpeed   = 50,
+		revealRoles = false,
 	},
 	farm = {
 		enabled       = false,
@@ -95,6 +96,11 @@ local ZX = {
 	},
 	antiFling = {
 		enabled = false,
+	},
+	sounds = {
+		murdererKill = "Default",
+		sheriffKill  = "Default",
+		volume       = 80,
 	},
 }
 
@@ -686,6 +692,7 @@ local triggerShootMurderer
 local triggerGrabGun
 local triggerFlingSheriff
 local triggerFlingMurderer
+local triggerSendReveal
 do
 	local isShooting = false
 
@@ -986,131 +993,144 @@ do
 		player.CharacterAdded:Connect(function(c) c.ChildAdded:Connect(bindGunActivated) end)
 	end)
 
-	-- Pre-Physics Stepped Downward Void Fling (Stepped: -120000 -Y + Çarpışma, Heartbeat: Sıfırla)
-	local function flingTargetDownward(targetPlr)
+	-- Infinite Yield Exact skidFling (4 saniye)
+	local function flingTargetDownward(TargetPlayer)
 		if isFlinging then return end
-		if not targetPlr or not targetPlr.Parent then return end
-		local char = player.Character
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		local root = char and char:FindFirstChild("HumanoidRootPart")
-		if not (char and hum and root and hum.Health > 0) then return end
+		if not TargetPlayer or not TargetPlayer.Parent then return end
+		local Character = player.Character
+		local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+		local RootPart = Humanoid and Humanoid.RootPart
+		if not (Character and Humanoid and RootPart and Humanoid.Health > 0) then return end
 
-		local target = targetPlr.Character
-		local targetHumanoid = target and target:FindFirstChildOfClass("Humanoid")
-		local targetRoot = target and (target:FindFirstChild("HumanoidRootPart") or target:FindFirstChild("Torso") or target:FindFirstChild("UpperTorso"))
-		if not (target and target.Parent and targetHumanoid and targetRoot and targetHumanoid.Health > 0) then return end
+		local TCharacter = TargetPlayer.Character
+		if not TCharacter then return end
+		local THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+		local TRootPart = THumanoid and THumanoid.RootPart
+		local THead = TCharacter:FindFirstChild("Head")
+		local Accessory = TCharacter:FindFirstChildOfClass("Accessory")
+		local Handle = Accessory and Accessory:FindFirstChild("Handle")
+		if not (THumanoid and (TRootPart or THead or Handle)) then return end
 
 		isFlinging = true
-		local home = root.CFrame
-		local cam = workspace.CurrentCamera
-		local subject = cam and cam.CameraSubject
-		local seated, platform = true, false
-		local oldFallen = workspace.FallenPartsDestroyHeight
-		pcall(function() seated = hum:GetStateEnabled(Enum.HumanoidStateType.Seated) end)
-		pcall(function() platform = hum.PlatformStand end)
-		pcall(function() workspace.FallenPartsDestroyHeight = 0 / 0 end)
-		pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end)
-		pcall(function() if cam then cam.CameraSubject = targetHumanoid end end)
-
-		local savedGroups = {}
-		pcall(function()
-			for _, part in ipairs(target:GetDescendants()) do
-				if part:IsA("BasePart") then
-					table.insert(savedGroups, { part, part.CanCollide, part.CollisionGroup })
-				end
-			end
-		end)
-
-		local started, done, phase = os.clock(), false, 0
-		local startY = targetRoot.Position.Y
-
-		-- 1. Stepped (Fizik adımından HEMEN ÖNCE): Çarpışmayı aç + hedefin üstüne/içine koy + aşağı -120000 bas
-		local stepped = RunService.Stepped:Connect(function()
-			if done then return end
-			if not target.Parent or not targetRoot.Parent or targetHumanoid.Health <= 0 then done = true return end
-			if not root.Parent or hum.Health <= 0 then done = true return end
-			if os.clock() - started > 4.0 then done = true return end
-			if targetRoot.Position.Y < startY - 30 or targetRoot.Position.Y < -150 then done = true return end
-
-			phase = phase + 1
-			pcall(function()
-				hum.PlatformStand = true
-				hum:ChangeState(Enum.HumanoidStateType.Physics)
-				for _, d in ipairs(char:GetDescendants()) do
-					if d:IsA("BasePart") then
-						d.CanCollide = (d == root or d.Name == "Torso" or d.Name == "UpperTorso")
-						pcall(function() d.CollisionGroup = "Default" end)
-					end
-				end
-				for _, entry in ipairs(savedGroups) do
-					local p = entry[1]
-					if p.Parent then
-						p.CanCollide = true
-						pcall(function() p.CollisionGroup = "Default" end)
-					end
-				end
-				local tVel = targetRoot.AssemblyLinearVelocity or targetRoot.Velocity or Vector3.zero
-				local pos = targetRoot.Position + tVel * 0.06
-				local yOff = (phase % 2 == 0) and 0.25 or -0.35
-				root.CFrame = CFrame.new(pos.X, pos.Y + yOff, pos.Z) * CFrame.Angles(-1.5707963267948966, 0, 0)
-				root.AssemblyLinearVelocity = Vector3.new(0, -120000, 0)
-				root.Velocity = Vector3.new(0, -120000, 0)
-				root.AssemblyAngularVelocity = Vector3.new(12000, 0, 12000)
-				root.RotVelocity = Vector3.new(12000, 0, 12000)
-			end)
-		end)
-
-		-- 2. Heartbeat (Fizik adımından HEMEN SONRA): Kendi hızımızı sıfırla ki haritanın altına uçmayalım
-		local heartbeat = RunService.Heartbeat:Connect(function()
-			if done then return end
-			pcall(function()
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				root.Velocity = Vector3.zero
-				root.RotVelocity = Vector3.zero
-			end)
-		end)
-
-		while not done and os.clock() - started < 4.2 do
-			RunService.Heartbeat:Wait()
-		end
-		done = true
-		pcall(function() stepped:Disconnect() end)
-		pcall(function() heartbeat:Disconnect() end)
-
-		local restoreAt, stable = os.clock(), 0
-		while os.clock() - restoreAt < 1.2 do
-			if not root.Parent then break end
-			pcall(function()
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				root.Velocity = Vector3.zero
-				root.RotVelocity = Vector3.zero
-				root.CFrame = home
-			end)
-			RunService.Heartbeat:Wait()
-			local valid, dist = pcall(function() return (root.Position - home.Position).Magnitude end)
-			if valid and dist < 3 then stable = stable + 1 else stable = 0 end
-			if stable >= 3 then break end
-		end
+		local OldPos = RootPart.CFrame
+		local OldFPDH = workspace.FallenPartsDestroyHeight
+		local OldSubj = workspace.CurrentCamera and workspace.CurrentCamera.CameraSubject
 
 		pcall(function()
-			root.AssemblyLinearVelocity = Vector3.zero
-			root.AssemblyAngularVelocity = Vector3.zero
-			hum.PlatformStand = platform
-			if hum.Health > 0 then hum:ChangeState(Enum.HumanoidStateType.GettingUp) end
-			hum:SetStateEnabled(Enum.HumanoidStateType.Seated, seated)
-			if cam and subject then cam.CameraSubject = subject end
-		end)
-		for _, entry in ipairs(savedGroups) do
-			if entry[1].Parent then
-				pcall(function()
-					entry[1].CanCollide = entry[2]
-					entry[1].CollisionGroup = entry[3]
-				end)
+			if RootPart.Velocity.Magnitude < 50 then
+				OldPos = RootPart.CFrame
 			end
-		end
-		pcall(function() workspace.FallenPartsDestroyHeight = oldFallen end)
+			if THead and workspace.CurrentCamera then
+				workspace.CurrentCamera.CameraSubject = THead
+			elseif not THead and Handle and workspace.CurrentCamera then
+				workspace.CurrentCamera.CameraSubject = Handle
+			elseif THumanoid and workspace.CurrentCamera then
+				workspace.CurrentCamera.CameraSubject = THumanoid
+			end
+
+			local FPos = function(BasePart, Pos, Ang)
+				RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+				pcall(function() Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang) end)
+				RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+				RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+			end
+
+			local SFBasePart = function(BasePart)
+				local TimeToWait = 4.0
+				local Time = tick()
+				local Angle = 0
+				repeat
+					if RootPart and THumanoid and BasePart and BasePart.Parent and TCharacter.Parent and Humanoid.Health > 0 then
+						if BasePart.Velocity.Magnitude < 50 then
+							Angle = Angle + 100
+							FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+							task.wait()
+						else
+							FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(-90), 0, 0))
+							task.wait()
+							FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+							task.wait()
+						end
+					else
+						break
+					end
+				until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= TCharacter or TargetPlayer.Parent ~= Players or (not TargetPlayer.Character) or THumanoid.Sit or Humanoid.Health <= 0 or tick() > Time + TimeToWait or not isFlinging
+			end
+
+			workspace.FallenPartsDestroyHeight = 0 / 0
+			local BV = Instance.new("BodyVelocity")
+			BV.Name = "EpixVel"
+			BV.Parent = RootPart
+			BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
+			BV.MaxForce = Vector3.new(1 / 0, 1 / 0, 1 / 0)
+
+			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+
+			if TRootPart and THead then
+				if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then
+					SFBasePart(THead)
+				else
+					SFBasePart(TRootPart)
+				end
+			elseif TRootPart and not THead then
+				SFBasePart(TRootPart)
+			elseif not TRootPart and THead then
+				SFBasePart(THead)
+			elseif not TRootPart and not THead and Accessory and Handle then
+				SFBasePart(Handle)
+			end
+
+			BV:Destroy()
+			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+			if workspace.CurrentCamera then
+				workspace.CurrentCamera.CameraSubject = Humanoid or OldSubj
+			end
+
+			local rStart = tick()
+			repeat
+				RootPart.CFrame = OldPos * CFrame.new(0, 0.5, 0)
+				pcall(function() Character:SetPrimaryPartCFrame(OldPos * CFrame.new(0, 0.5, 0)) end)
+				Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+				for _, x in ipairs(Character:GetChildren()) do
+					if x:IsA("BasePart") then
+						x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
+					end
+				end
+				task.wait()
+			until (RootPart.Position - OldPos.p).Magnitude < 25 or tick() - rStart > 2
+			workspace.FallenPartsDestroyHeight = OldFPDH
+		end)
+
+		pcall(function()
+			workspace.FallenPartsDestroyHeight = OldFPDH
+			if workspace.CurrentCamera then workspace.CurrentCamera.CameraSubject = Humanoid or OldSubj end
+		end)
 		isFlinging = false
 	end
 
@@ -1127,6 +1147,76 @@ do
 			task.spawn(flingTargetDownward, target)
 		end
 	end
+
+	-- MM2 CHAT ROLE REVEAL (Haritaya TP Olunca Katil & Şerifi İfşalar)
+	local function sendChatMsg(msg)
+		local sent = false
+		pcall(function()
+			local tcs = game:GetService("TextChatService")
+			local channels = tcs and tcs:FindFirstChild("TextChannels")
+			local general = channels and (channels:FindFirstChild("RBXGeneral") or channels:FindFirstChildWhichIsA("TextChannel"))
+			if general then
+				general:SendAsync(msg)
+				sent = true
+			end
+		end)
+		if not sent then
+			pcall(function()
+				local ev = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+				local say = ev and ev:FindFirstChild("SayMessageRequest")
+				if say and say:IsA("RemoteEvent") then
+					say:FireServer(msg, "All")
+				end
+			end)
+		end
+	end
+
+	triggerSendReveal = function()
+		local mPlr, sPlr = nil, nil
+		for _, p in ipairs(Players:GetPlayers()) do
+			local r = getRole(p)
+			if r == "Murderer" and not mPlr then mPlr = p
+			elseif r == "Sheriff" and not sPlr then sPlr = p end
+		end
+		if not mPlr and not sPlr then return false end
+		local mName = mPlr and (mPlr.DisplayName or mPlr.Name) or "Unknown"
+		local sName = sPlr and (sPlr.DisplayName or sPlr.Name) or "Unknown"
+		local msg = "==ICelestialHUBI==\nMurderer:" .. mName .. "\nsheriff:" .. sName
+		sendChatMsg(msg)
+		return true
+	end
+
+	task.spawn(function()
+		local lastRevealedKey = nil
+		while true do
+			pcall(function()
+				local char = player.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				if not hasActiveRound() or not root or isInLobbyZone(char) then
+					lastRevealedKey = nil
+					return
+				end
+				if not ZX.combat.revealRoles then return end
+				local mPlr, sPlr = nil, nil
+				for _, p in ipairs(Players:GetPlayers()) do
+					local r = getRole(p)
+					if r == "Murderer" and not mPlr then mPlr = p
+					elseif r == "Sheriff" and not sPlr then sPlr = p end
+				end
+				if mPlr and sPlr and mPlr.Character and sPlr.Character then
+					if not isInLobbyZone(mPlr.Character) and not isInLobbyZone(sPlr.Character) then
+						local key = mPlr.Name .. "|" .. sPlr.Name
+						if lastRevealedKey ~= key then
+							lastRevealedKey = key
+							task.wait(0.6)
+							triggerSendReveal()
+						end
+					end
+				end
+			end)
+			task.wait(0.4)
+		end
+	end)
 
 	-- FE SPINBOT (5..100 Hız, Silent Atışları Kesmez)
 	local wasSpinning = false
@@ -2231,6 +2321,106 @@ end
 -- 9) VISUALS (NEVERLOSE) ARAYÜZÜ — SADECE ZEROX SEKMELERİ
 -- =========================================================================
 
+
+
+-- =========================================================================
+-- 8.5) CUSTOM KILL & SHOOT SOUNDS (Murderer Restart + Sheriff Single-Play)
+-- =========================================================================
+local playMurdererKillSound
+local playSheriffKillSound
+do
+	local SoundService = game:GetService("SoundService")
+	local MURDERER_SOUNDS = {
+		Default = nil,
+		HolyShit = "rbxassetid://72215662025854",
+	}
+	local SHERIFF_SOUNDS = {
+		Default = nil,
+		Rampage = "rbxassetid://80741697609140",
+		Velocity = "rbxassetid://108543399583882",
+	}
+
+	local activeMurdSound = nil
+	local activeSherSound = nil
+
+	playMurdererKillSound = function()
+		local id = MURDERER_SOUNDS[ZX.sounds.murdererKill]
+		if not id then return end
+		-- Önceki ses bitmeden yeni biri ölürse durdur ve baştan başlat
+		if activeMurdSound then
+			pcall(function() activeMurdSound:Stop() end)
+			pcall(function() activeMurdSound:Destroy() end)
+			activeMurdSound = nil
+		end
+		local s = Instance.new("Sound")
+		s.Name = "CH_MurdererKillSound"
+		s.SoundId = id
+		s.Volume = math.clamp((tonumber(ZX.sounds.volume) or 80) / 100, 0, 2)
+		s.Parent = SoundService
+		activeMurdSound = s
+		s.Ended:Connect(function()
+			if activeMurdSound == s then activeMurdSound = nil end
+			pcall(function() s:Destroy() end)
+		end)
+		pcall(function() s:Play() end)
+	end
+
+	playSheriffKillSound = function()
+		local id = SHERIFF_SOUNDS[ZX.sounds.sheriffKill]
+		if not id then return end
+		-- Şerifte tek defa çalar ve biter
+		if activeSherSound and activeSherSound.IsPlaying then return end
+		local s = Instance.new("Sound")
+		s.Name = "CH_SheriffKillSound"
+		s.SoundId = id
+		s.Volume = math.clamp((tonumber(ZX.sounds.volume) or 80) / 100, 0, 2)
+		s.Parent = SoundService
+		activeSherSound = s
+		s.Ended:Connect(function()
+			if activeSherSound == s then activeSherSound = nil end
+			pcall(function() s:Destroy() end)
+		end)
+		pcall(function() s:Play() end)
+	end
+
+	local hookedChars = setmetatable({}, { __mode = "k" })
+	local lastSherKillAt = 0
+	local function hookPlayerDeath(p)
+		if not p or p == player then return end
+		local function bindChar(c)
+			if not c or hookedChars[c] then return end
+			hookedChars[c] = true
+			task.spawn(function()
+				local h = c:WaitForChild("Humanoid", 8)
+				if not h then return end
+				local triggered = false
+				local function onDied()
+					if triggered then return end
+					triggered = true
+					if not hasActiveRound() or isInLobbyZone(c) then return end
+					local myRole = getRole(player)
+					if myRole == "Murderer" then
+						playMurdererKillSound()
+					elseif myRole == "Sheriff" and getRole(p) == "Murderer" then
+						if os.clock() - lastSherKillAt > 0.5 then
+							lastSherKillAt = os.clock()
+							playSheriffKillSound()
+						end
+					end
+				end
+				h.Died:Connect(onDied)
+				h.HealthChanged:Connect(function(hp)
+					if hp <= 0 then onDied() end
+				end)
+			end)
+		end
+		if p.Character then bindChar(p.Character) end
+		p.CharacterAdded:Connect(bindChar)
+	end
+
+	for _, p in ipairs(Players:GetPlayers()) do hookPlayerDeath(p) end
+	Players.PlayerAdded:Connect(hookPlayerDeath)
+end
 
 local function InitNeverLoseUI(forceMobile)
 	pcall(function()
@@ -19226,6 +19416,8 @@ do
 		{ Icon = "crosshair", Name = "Combat" },
 		{ Icon = "person", Name = "Visual" },
 		{ Icon = "coins", Name = "AutoFarm" },
+		{ Icon = "message-square", Name = "Message" },
+		{ Icon = "volume-2", Name = "Sounds" },
 		{ Icon = "sword", Name = "Knife" },
 		{ Icon = "crosshair", Name = "Weapons" },
 	})
@@ -19280,6 +19472,31 @@ do
 		Min = 0, Max = 100, Default = math.floor(ZX.farm.delay * 100),
 		Callback = function(v) ZX.farm.delay = v / 100 end,
 	})
+
+	local msgSec = MM2Group.Message:AddSection({ Name = "Role Reveal", Position = "left" })
+	uiRefs.combat_revealRoles = msgSec:AddLabel("Auto Reveal Roles"):AddToggle({
+		Default = ZX.combat.revealRoles,
+		Callback = function(v) ZX.combat.revealRoles = v == true end,
+	})
+	msgSec:AddButton({ Name = "Send Reveal", Callback = triggerSendReveal })
+
+	local sndSec = MM2Group.Sounds:AddSection({ Name = "Kill Sounds", Position = "left" })
+	uiRefs.sounds_murderer = sndSec:AddLabel("Murderer Kill Sound"):AddDropdown({
+		Values = { "Default", "HolyShit" },
+		Default = ZX.sounds.murdererKill,
+		Callback = function(v) if type(v) == "string" then ZX.sounds.murdererKill = v end end,
+	})
+	uiRefs.sounds_sheriff = sndSec:AddLabel("Sheriff Kill Sound"):AddDropdown({
+		Values = { "Default", "Rampage", "Velocity" },
+		Default = ZX.sounds.sheriffKill,
+		Callback = function(v) if type(v) == "string" then ZX.sounds.sheriffKill = v end end,
+	})
+	uiRefs.sounds_volume = sndSec:AddLabel("Volume"):AddSlider({
+		Min = 0, Max = 100, Default = ZX.sounds.volume,
+		Callback = function(v) ZX.sounds.volume = v end,
+	})
+	sndSec:AddButton({ Name = "Test Murderer Sound", Callback = function() if playMurdererKillSound then playMurdererKillSound() end end })
+	sndSec:AddButton({ Name = "Test Sheriff Sound", Callback = function() if playSheriffKillSound then playSheriffKillSound() end end })
 
 
 	-- AYRI KNIFE SEKMESİ (Görselli Galeri)
@@ -19366,8 +19583,16 @@ do
 		{ Icon = "info", Name = "Data" },
 	})
 
+	local loaderData = nil
+	pcall(function()
+		local g = (type(getgenv) == "function" and getgenv()) or _G
+		if type(g) == "table" and type(g.CelestialLoaderData) == "table" then
+			loaderData = g.CelestialLoaderData
+		end
+	end)
+
 	do
-		local execName = "Bilinmiyor"
+		local execName = (loaderData and type(loaderData.executor) == "string" and loaderData.executor ~= "" and loaderData.executor) or "Unknown"
 		pcall(function()
 			if type(identifyexecutor) == "function" then
 				local n, v = identifyexecutor()
@@ -19380,7 +19605,7 @@ do
 			end
 		end)
 
-		local execIdentity = "Bilinmiyor"
+		local execIdentity = (loaderData and type(loaderData.identity) == "string" and loaderData.identity ~= "" and loaderData.identity) or "Unknown"
 		pcall(function()
 			if type(getthreadidentity) == "function" then
 				execIdentity = tostring(getthreadidentity())
@@ -19397,16 +19622,17 @@ do
 	end
 
 	do
-		local CFG_DIR = "CelestialHub"
+		local uid = (loaderData and loaderData.userId) or (player and player.UserId) or 0
+		local CFG_DIR = "CelestialHub/users/" .. tostring(uid)
 		local selectedConfig = "default"
 		local typedName = "default"
 		local HttpService = game:GetService("HttpService")
 
 		local function ensureDir()
 			pcall(function()
-				if type(isfolder) == "function" and type(makefolder) == "function" then
-					if not isfolder(CFG_DIR) then makefolder(CFG_DIR) end
-				elseif type(makefolder) == "function" then
+				if type(makefolder) == "function" then
+					makefolder("CelestialHub")
+					makefolder("CelestialHub/users")
 					makefolder(CFG_DIR)
 				end
 			end)
@@ -19430,6 +19656,13 @@ do
 					end
 				end
 			end
+			if loaderData and type(loaderData.configs) == "table" then
+				for k, _ in pairs(loaderData.configs) do
+					local found = false
+					for _, ex in ipairs(out) do if ex == k then found = true break end end
+					if not found then table.insert(out, k) end
+				end
+			end
 			if #out == 0 then table.insert(out, "default") end
 			return out
 		end
@@ -19446,7 +19679,7 @@ do
 				combat = {
 					wallbang = ZX.combat.wallbang, autoGrabGun = ZX.combat.autoGrabGun,
 					shootKey = ZX.combat.shootKey and ZX.combat.shootKey.Name or nil, killAura = ZX.combat.killAura,
-					spinbot = ZX.combat.spinbot, spinSpeed = ZX.combat.spinSpeed,
+					spinbot = ZX.combat.spinbot, spinSpeed = ZX.combat.spinSpeed, revealRoles = ZX.combat.revealRoles,
 				},
 				farm = {
 					enabled = ZX.farm.enabled, mode = ZX.farm.mode, speed = ZX.farm.speed,
@@ -19470,6 +19703,7 @@ do
 					teamCheck = ZX.universalEsp.teamCheck,
 				},
 				antiFling = { enabled = ZX.antiFling.enabled },
+				sounds = { murdererKill = ZX.sounds.murdererKill, sheriffKill = ZX.sounds.sheriffKill, volume = ZX.sounds.volume },
 			}
 		end
 
@@ -19506,7 +19740,9 @@ do
 				ZX.combat.spinSpeed = tonumber(data.combat.spinSpeed) or 50
 				pcall(function() uiRefs.combat_killAura:SetValue(ZX.combat.killAura) end)
 				pcall(function() uiRefs.combat_spinbot:SetValue(ZX.combat.spinbot) end)
+				ZX.combat.revealRoles = data.combat.revealRoles == true
 				pcall(function() uiRefs.combat_spinSpeed:SetValue(ZX.combat.spinSpeed) end)
+				pcall(function() uiRefs.combat_revealRoles:SetValue(ZX.combat.revealRoles) end)
 			end
 			if type(data.farm) == "table" then
 				ZX.farm.enabled = data.farm.enabled == true
@@ -19552,6 +19788,14 @@ do
 				pcall(function() uiRefs.uni_names:SetValue(ZX.universalEsp.names) end)
 				pcall(function() uiRefs.uni_teamCheck:SetValue(ZX.universalEsp.teamCheck) end)
 			end
+			if type(data.sounds) == "table" then
+				if type(data.sounds.murdererKill) == "string" then ZX.sounds.murdererKill = data.sounds.murdererKill end
+				if type(data.sounds.sheriffKill) == "string" then ZX.sounds.sheriffKill = data.sounds.sheriffKill end
+				ZX.sounds.volume = tonumber(data.sounds.volume) or 80
+				pcall(function() uiRefs.sounds_murderer:SetValue(ZX.sounds.murdererKill) end)
+				pcall(function() uiRefs.sounds_sheriff:SetValue(ZX.sounds.sheriffKill) end)
+				pcall(function() uiRefs.sounds_volume:SetValue(ZX.sounds.volume) end)
+			end
 			if type(data.antiFling) == "table" then
 				ZX.antiFling.enabled = data.antiFling.enabled == true
 				pcall(function() uiRefs.antiFling_enabled:SetValue(ZX.antiFling.enabled) end)
@@ -19591,8 +19835,12 @@ do
 		cfgActSec:AddButton({
 			Name = "Load Config",
 			Callback = function()
-				if type(readfile) ~= "function" then return end
 				local name = sanitizeName(selectedConfig)
+				if loaderData and type(loaderData.configs) == "table" and type(loaderData.configs[name]) == "table" then
+					applyConfig(loaderData.configs[name])
+					return
+				end
+				if type(readfile) ~= "function" then return end
 				local ok, raw = pcall(readfile, CFG_DIR .. "/" .. name .. ".json")
 				if ok and type(raw) == "string" then
 					local okJ, tbl = pcall(function() return HttpService:JSONDecode(raw) end)
