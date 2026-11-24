@@ -101,6 +101,18 @@ local ZX = {
 	antiFling = {
 		enabled = false,
 	},
+	tsb = {
+		autoBlock     = false,
+		range         = 25,
+		delay         = 0,
+		fov           = 180,
+		facing        = false,
+		aimHelper     = false,
+		blockKey      = nil,
+		counterEsp    = false,
+		counterNotify = true,
+		counterKey    = nil,
+	},
 	sounds = {
 		murdererKill = "Default",
 		sheriffKill  = "Default",
@@ -6361,6 +6373,367 @@ do
 
 	for _, p in ipairs(Players:GetPlayers()) do hookPlayerDeath(p) end
 	Players.PlayerAdded:Connect(hookPlayerDeath)
+end
+
+
+-- =========================================================================
+-- 8.7) TSB ENGINE — AUTO BLOCK/PARRY & COUNTER ESP
+-- =========================================================================
+do
+	local activeCounters = {}
+	local counterHighlights = {}
+
+	local function detectTSBCharacter(char)
+		if not char then return "Unknown" end
+		if char:FindFirstChild("Katana") or char:FindFirstChild("Sheath") or char:FindFirstChild("Saya") or char:FindFirstChild("AtomicBlade") then
+			return "Atomic"
+		end
+		if char:FindFirstChild("Bat") or char:FindFirstChild("MetalBat") or char:FindFirstChild("FoulBat") then
+			return "Bat"
+		end
+		if char:FindFirstChild("NinjaScarf") or char:FindFirstChild("NinjaBlade") or char:FindFirstChild("SonicScarf") then
+			return "Sonic"
+		end
+		if char:FindFirstChild("CyborgArm") or char:FindFirstChild("Core") or char:FindFirstChild("GenosCore") then
+			return "Genos"
+		end
+		if char:FindFirstChild("Bandages") or char:FindFirstChild("HunterHair") or char:FindFirstChild("HunterRobe") then
+			return "Garou"
+		end
+		if char:FindFirstChild("Cape") or char:FindFirstChild("BaldHead") or char:FindFirstChild("HeroSuit") then
+			return "Saitama"
+		end
+		local charName = char:GetAttribute("Character") or char:GetAttribute("Char") or char:GetAttribute("Class")
+		if charName and type(charName) == "string" then
+			local cLower = charName:lower()
+			if cLower:find("hunter") or cLower:find("garou") then return "Garou" end
+			if cLower:find("hero") or cLower:find("saitama") or cLower:find("bald") then return "Saitama" end
+			if cLower:find("blade") or cLower:find("atomic") or cLower:find("samurai") then return "Atomic" end
+			if cLower:find("bat") or cLower:find("brutal") or cLower:find("foul") then return "Bat" end
+			if cLower:find("ninja") or cLower:find("sonic") then return "Sonic" end
+			if cLower:find("cyborg") or cLower:find("genos") then return "Genos" end
+			if cLower:find("void") or cLower:find("suiryu") or cLower:find("fist") then return "Suiryu" end
+		end
+		return "Unknown"
+	end
+
+	local function getCounterState(targetPlr)
+		local char = targetPlr.Character
+		if not char or not char:IsDescendantOf(Workspace) then return nil end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if not hum or hum.Health <= 0 or hum:GetState() == Enum.HumanoidStateType.Dead then return nil end
+		local animator = hum:FindFirstChildOfClass("Animator")
+		if not animator then return nil end
+
+		local charType = detectTSBCharacter(char)
+		local isUltMode = false
+		pcall(function()
+			if char:GetAttribute("Awakened") == true or char:GetAttribute("Ultimate") == true or char:GetAttribute("Mode") == "Awakened"
+				or char:FindFirstChild("Awakening") or char:FindFirstChild("UltimateAura")
+				or char:FindFirstChild("RedEyes") or char:FindFirstChild("AwakenedAura") or char:FindFirstChild("Aura") then
+				isUltMode = true
+			end
+		end)
+
+		local tracks = animator:GetPlayingAnimationTracks()
+		for _, track in ipairs(tracks) do
+			if track.IsPlaying then
+				local anim = track.Animation
+				local animId = anim and anim.AnimationId or ""
+				local animIdClean = animId:match("%d+") or ""
+				local trackName = track.Name:lower()
+
+				if animIdClean == "11343318134" or animIdClean == "13927612951" or trackName:find("deathcounter") or (trackName:find("death") and trackName:find("counter")) then
+					return { isUlt = true, label = "Death Counter", color = Color3.fromRGB(255, 30, 30) }
+				end
+				if animIdClean == "12272894215" or animIdClean == "12351854556" or animIdClean == "12273188754" or animIdClean == "14374357351" or (trackName:find("flowing") and trackName:find("water")) or trackName:find("prey") then
+					if isUltMode then
+						return { isUlt = true, label = "Garou Ulti counter", color = Color3.fromRGB(180, 0, 255) }
+					else
+						return { isUlt = false, label = "Garou counter", color = Color3.fromRGB(0, 160, 255) }
+					end
+				end
+				if trackName:find("pinpoint") or trackName:find("splitsecond") or trackName:find("split_second") or (charType == "Atomic" and trackName:find("counter")) or animIdClean == "12447707844" then
+					if isUltMode then
+						return { isUlt = true, label = "Atomic Ulti counter", color = Color3.fromRGB(255, 75, 0) }
+					else
+						return { isUlt = false, label = "Atomic counter", color = Color3.fromRGB(255, 170, 0) }
+					end
+				end
+				if trackName:find("foul") or (charType == "Bat" and trackName:find("counter")) or (trackName:find("grand") and trackName:find("slam")) then
+					if isUltMode then
+						return { isUlt = true, label = "Bat Ulti counter", color = Color3.fromRGB(255, 0, 90) }
+					else
+						return { isUlt = false, label = "Bat counter", color = Color3.fromRGB(220, 20, 60) }
+					end
+				end
+				if (charType == "Sonic" and trackName:find("counter")) or trackName:find("flashcounter") then
+					if isUltMode then
+						return { isUlt = true, label = "Sonic Ulti counter", color = Color3.fromRGB(220, 80, 255) }
+					else
+						return { isUlt = false, label = "Sonic counter", color = Color3.fromRGB(150, 40, 255) }
+					end
+				end
+				if trackName:find("counter") and not trackName:find("run") and not trackName:find("walk") and not trackName:find("idle") then
+					local charLabel = (charType ~= "Unknown" and charType) or "Ulti"
+					if isUltMode then
+						return { isUlt = true, label = charLabel .. " Ulti counter", color = Color3.fromRGB(255, 50, 150) }
+					else
+						return { isUlt = false, label = charLabel .. " counter", color = Color3.fromRGB(0, 210, 255) }
+					end
+				end
+			end
+		end
+
+		if char:FindFirstChild("FlowingWater") then
+			if isUltMode then
+				return { isUlt = true, label = "Garou Ulti counter", color = Color3.fromRGB(180, 0, 255) }
+			else
+				return { isUlt = false, label = "Garou counter", color = Color3.fromRGB(0, 160, 255) }
+			end
+		end
+		return nil
+	end
+
+	local function clearCounterVisual(p)
+		local rec = counterHighlights[p]
+		if rec then
+			if rec.hl then pcall(function() rec.hl:Destroy() end) end
+			if rec.bb then pcall(function() rec.bb:Destroy() end) end
+			counterHighlights[p] = nil
+		end
+	end
+
+	local function setCounterVisual(p, col, text)
+		local char = p.Character
+		if not char then clearCounterVisual(p) return end
+		local rec = counterHighlights[p]
+		if not rec or not rec.hl or rec.hl.Parent ~= char then
+			clearCounterVisual(p)
+			local hl = Instance.new("Highlight")
+			hl.Name = "CH_TSBCounterHL"
+			hl.FillTransparency = 0.25
+			hl.OutlineTransparency = 0
+			hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			hl.Parent = char
+			local bb = Instance.new("BillboardGui")
+			bb.Name = "CH_TSBCounterBB"
+			bb.Size = UDim2.fromOffset(180, 32)
+			bb.StudsOffset = Vector3.new(0, 3.2, 0)
+			bb.AlwaysOnTop = true
+			bb.Adornee = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+			bb.Parent = char
+			local lbl = Instance.new("TextLabel")
+			lbl.Size = UDim2.fromScale(1, 1)
+			lbl.BackgroundTransparency = 1
+			lbl.Font = Enum.Font.GothamBold
+			lbl.TextSize = 14
+			lbl.TextStrokeTransparency = 0.2
+			lbl.Parent = bb
+			rec = { hl = hl, bb = bb, lbl = lbl }
+			counterHighlights[p] = rec
+		end
+		rec.hl.FillColor = col
+		rec.hl.OutlineColor = col
+		rec.lbl.TextColor3 = col
+		rec.lbl.Text = text
+	end
+
+	RunService.RenderStepped:Connect(function()
+		if not ZX.tsb.counterEsp then
+			for p in pairs(counterHighlights) do clearCounterVisual(p) end
+			activeCounters = {}
+			return
+		end
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player then
+				local info = getCounterState(p)
+				if info then
+					activeCounters[p] = info
+					local col = info.isUlt and Color3.fromHSV((tick() * 1.5) % 1, 1, 1) or info.color
+					setCounterVisual(p, col, info.label)
+				else
+					if activeCounters[p] then
+						activeCounters[p] = nil
+						if ZX.tsb.counterNotify then
+							pcall(function()
+								game:GetService("StarterGui"):SetCore("SendNotification", {
+									Title = "TSB Counter",
+									Text = (p.DisplayName or p.Name) .. " Counter ended",
+									Duration = 3,
+								})
+							end)
+						end
+					end
+					clearCounterVisual(p)
+				end
+			end
+		end
+	end)
+
+	Players.PlayerRemoving:Connect(function(p)
+		activeCounters[p] = nil
+		clearCounterVisual(p)
+	end)
+
+	-- TSB Auto Block / Parry Motoru
+	local vimService = nil
+	pcall(function() vimService = game:GetService("VirtualInputManager") end)
+
+	local anims = {
+		["rbxassetid://10469493270"] = { 0, 0.30 },
+		["rbxassetid://10469630950"] = { 0, 0.30 },
+		["rbxassetid://10469639222"] = { 0, 0.30 },
+		["rbxassetid://10469643643"] = { 0, 0.30 },
+		["rbxassetid://13532562418"] = { 0, 0.30 },
+		["rbxassetid://13532600125"] = { 0, 0.30 },
+		["rbxassetid://13532604085"] = { 0, 0.30 },
+		["rbxassetid://13294471966"] = { 0, 0.30 },
+		["rbxassetid://13491635433"] = { 0, 0.30 },
+		["rbxassetid://13296577783"] = { 0, 0.30 },
+		["rbxassetid://13295919399"] = { 0, 0.30 },
+		["rbxassetid://13295936866"] = { 0, 0.30 },
+		["rbxassetid://13370310513"] = { 0, 0.30 },
+		["rbxassetid://13390230973"] = { 0, 0.30 },
+		["rbxassetid://13378751717"] = { 0, 0.30 },
+		["rbxassetid://13378708199"] = { 0, 0.30 },
+	}
+	local dodges = {
+		["rbxassetid://10479335397"] = { 0, 0.50 },
+		["rbxassetid://13380255751"] = { 0, 0.50 },
+	}
+	local barrages = {
+		["rbxassetid://10466974800"] = { 0.20, 1.80 },
+		["rbxassetid://12534735382"] = { 0.20, 1.80 },
+	}
+	local abilities = {
+		["rbxassetid://10468665991"] = { 0.15, 0.60 },
+		["rbxassetid://13376869471"] = { 0.05, 1 },
+		["rbxassetid://13376962659"] = { 0, 2 },
+		["rbxassetid://12296882427"] = { 0.05, 1 },
+		["rbxassetid://13309500827"] = { 0.05, 1 },
+		["rbxassetid://13365849295"] = { 0, 1 },
+		["rbxassetid://13377153603"] = { 0, 1 },
+		["rbxassetid://12509505723"] = { 0.09, 2 },
+	}
+	local durations = { anim = 0.3, dodge = 0.9, barrage = 0.9, ability = 0.6 }
+	local cd = false
+
+	local function def(action)
+		if cd then return end
+		cd = true
+		if ZX.tsb.delay > 0 then task.wait(ZX.tsb.delay) end
+		pcall(function()
+			local myChar = player.Character
+			local comm = myChar and myChar:FindFirstChild("Communicate")
+			if comm and comm:IsA("RemoteEvent") then
+				comm:FireServer({ Goal = "KeyPress", Key = Enum.KeyCode.F })
+			end
+		end)
+		pcall(function()
+			if vimService then vimService:SendKeyEvent(true, Enum.KeyCode.F, false, game) end
+		end)
+		task.wait(durations[action] or 0.3)
+		pcall(function()
+			local myChar = player.Character
+			local comm = myChar and myChar:FindFirstChild("Communicate")
+			if comm and comm:IsA("RemoteEvent") then
+				comm:FireServer({ Goal = "KeyRelease", Key = Enum.KeyCode.F })
+			end
+		end)
+		pcall(function()
+			if vimService then vimService:SendKeyEvent(false, Enum.KeyCode.F, false, game) end
+		end)
+		cd = false
+	end
+
+	local function closest()
+		local list = {}
+		local myChar = player.Character
+		local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		if not myRoot then return list end
+		for _, v in ipairs(Players:GetPlayers()) do
+			if v ~= player and v.Character and v.Character ~= myChar then
+				local eRoot = v.Character:FindFirstChild("HumanoidRootPart")
+				if eRoot and (eRoot.Position - myRoot.Position).Magnitude < ZX.tsb.range then
+					table.insert(list, v)
+				end
+			end
+		end
+		return list
+	end
+
+	local function attackchecker()
+		local myChar = player.Character
+		local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+		local animator = hum and hum:FindFirstChildOfClass("Animator")
+		if not animator then return false end
+		for _, anim in ipairs(animator:GetPlayingAnimationTracks()) do
+			local id = anim.Animation and anim.Animation.AnimationId
+			if id and (anims[id] or dodges[id] or abilities[id] or barrages[id]) then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function isfacing(enemyChar)
+		if not ZX.tsb.facing then return true end
+		local myChar = player.Character
+		local myHead = myChar and myChar:FindFirstChild("Head")
+		local eHead = enemyChar and enemyChar:FindFirstChild("Head")
+		if not myHead or not eHead then return true end
+		local dir = myHead.CFrame.LookVector
+		local unit = (eHead.CFrame.Position - myHead.CFrame.Position).Unit
+		local val = math.pow((dir - unit).Magnitude / 2, 2)
+		return val < (ZX.tsb.fov / 360)
+	end
+
+	local function lookat(enemyChar)
+		if not ZX.tsb.aimHelper then return end
+		local myChar = player.Character
+		local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		local eRoot = enemyChar and enemyChar:FindFirstChild("HumanoidRootPart")
+		if myRoot and eRoot then
+			myRoot.CFrame = CFrame.lookAt(myRoot.Position, Vector3.new(eRoot.Position.X, myRoot.Position.Y, eRoot.Position.Z))
+		end
+	end
+
+	RunService.RenderStepped:Connect(function()
+		if not ZX.tsb.autoBlock then return end
+		local myChar = player.Character
+		if not myChar or myChar:FindFirstChild("M1ing") or attackchecker() then return end
+		for _, c in ipairs(closest()) do
+			local eChar = c.Character
+			local eHum = eChar and eChar:FindFirstChildOfClass("Humanoid")
+			local animator = eHum and eHum:FindFirstChildOfClass("Animator")
+			if animator and isfacing(eChar) then
+				for _, v in ipairs(animator:GetPlayingAnimationTracks()) do
+					local animId = v.Animation and v.Animation.AnimationId
+					if animId then
+						local anim = anims[animId]
+						local dodge = dodges[animId]
+						local ability = abilities[animId]
+						local barrage = barrages[animId]
+						local pos = v.TimePosition
+						if anim and pos >= anim[1] and pos <= anim[2] then
+							task.spawn(function() lookat(eChar) def("anim") end)
+							break
+						elseif dodge and pos > dodge[1] and pos < dodge[2] then
+							task.spawn(function() lookat(eChar) def("dodge") end)
+							break
+						elseif barrage and pos > barrage[1] and pos < barrage[2] then
+							task.spawn(function() lookat(eChar) def("barrage") end)
+							break
+						elseif ability and pos > ability[1] and pos < ability[2] then
+							task.spawn(function() lookat(eChar) def("ability") end)
+							break
+						end
+					end
+				end
+			end
+		end
+	end)
 end
 
 local function InitNeverLoseUI(forceMobile)
@@ -23531,6 +23904,68 @@ do
 		end,
 	})
 
+	-- GRUP 2.5: TSB (The Strongest Battlegrounds)
+	local TSBGroup = Window:AddGroup("TSB", "shield", {
+		{ Icon = "shield", Name = "AutoBlock" },
+		{ Icon = "eye", Name = "CounterESP" },
+	})
+
+	local tsbAbSec = TSBGroup.AutoBlock:AddSection({ Name = "Auto Block", Position = "left" })
+	uiRefs.tsb_autoBlock = tsbAbSec:AddLabel("Auto Block"):AddToggle({
+		Default = ZX.tsb.autoBlock,
+		Callback = function(v) ZX.tsb.autoBlock = v == true end,
+	})
+	uiRefs.tsb_range = tsbAbSec:AddLabel("Detection Range"):AddSlider({
+		Min = 5, Max = 60, Default = ZX.tsb.range,
+		Callback = function(v) ZX.tsb.range = v end,
+	})
+	uiRefs.tsb_delay = tsbAbSec:AddLabel("Block Delay"):AddSlider({
+		Min = 0, Max = 400, Default = math.floor(ZX.tsb.delay * 1000),
+		Callback = function(v) ZX.tsb.delay = v / 1000 end,
+	})
+	uiRefs.tsb_fov = tsbAbSec:AddLabel("Field of View"):AddSlider({
+		Min = 30, Max = 360, Default = ZX.tsb.fov,
+		Callback = function(v) ZX.tsb.fov = v end,
+	})
+	uiRefs.tsb_facing = tsbAbSec:AddLabel("Facing Only"):AddToggle({
+		Default = ZX.tsb.facing,
+		Callback = function(v) ZX.tsb.facing = v == true end,
+	})
+	uiRefs.tsb_aimHelper = tsbAbSec:AddLabel("Turn to Attacker"):AddToggle({
+		Default = ZX.tsb.aimHelper,
+		Callback = function(v) ZX.tsb.aimHelper = v == true end,
+	})
+	uiRefs.tsb_blockKey = tsbAbSec:AddLabel("Auto Block Keybind"):AddKeybind({
+		Default = nil,
+		Callback = function(keyName)
+			if type(keyName) == "string" and keyName ~= "" and Enum.KeyCode[keyName] then
+				ZX.tsb.blockKey = Enum.KeyCode[keyName]
+			else
+				ZX.tsb.blockKey = nil
+			end
+		end,
+	})
+
+	local tsbCeSec = TSBGroup.CounterESP:AddSection({ Name = "Counter ESP", Position = "left" })
+	uiRefs.tsb_counterEsp = tsbCeSec:AddLabel("Counter ESP"):AddToggle({
+		Default = ZX.tsb.counterEsp,
+		Callback = function(v) ZX.tsb.counterEsp = v == true end,
+	})
+	uiRefs.tsb_counterNotify = tsbCeSec:AddLabel("Counter Ended Notify"):AddToggle({
+		Default = ZX.tsb.counterNotify,
+		Callback = function(v) ZX.tsb.counterNotify = v == true end,
+	})
+	uiRefs.tsb_counterKey = tsbCeSec:AddLabel("Counter ESP Keybind"):AddKeybind({
+		Default = nil,
+		Callback = function(keyName)
+			if type(keyName) == "string" and keyName ~= "" and Enum.KeyCode[keyName] then
+				ZX.tsb.counterKey = Enum.KeyCode[keyName]
+			else
+				ZX.tsb.counterKey = nil
+			end
+		end,
+	})
+
 	-- GRUP 3: SETTINGS -> CONFIG + DATA
 	local SettingsGroup = Window:AddGroup("SETTINGS", "settings", {
 		{ Icon = "sliders-horizontal", Name = "Config" },
@@ -23678,6 +24113,7 @@ do
 				},
 				antiFling = { enabled = ZX.antiFling.enabled },
 				sounds = { murdererKill = ZX.sounds.murdererKill, sheriffKill = ZX.sounds.sheriffKill, volume = ZX.sounds.volume },
+				tsb = { autoBlock = ZX.tsb.autoBlock, range = ZX.tsb.range, delay = ZX.tsb.delay, fov = ZX.tsb.fov, facing = ZX.tsb.facing, aimHelper = ZX.tsb.aimHelper, counterEsp = ZX.tsb.counterEsp, counterNotify = ZX.tsb.counterNotify },
 			}
 		end
 
@@ -23770,6 +24206,24 @@ do
 				pcall(function() uiRefs.uni_names:SetValue(ZX.universalEsp.names) end)
 				pcall(function() uiRefs.uni_teamCheck:SetValue(ZX.universalEsp.teamCheck) end)
 			end
+			if type(data.tsb) == "table" then
+				ZX.tsb.autoBlock = data.tsb.autoBlock == true
+				ZX.tsb.range = tonumber(data.tsb.range) or 25
+				ZX.tsb.delay = tonumber(data.tsb.delay) or 0
+				ZX.tsb.fov = tonumber(data.tsb.fov) or 180
+				ZX.tsb.facing = data.tsb.facing == true
+				ZX.tsb.aimHelper = data.tsb.aimHelper == true
+				ZX.tsb.counterEsp = data.tsb.counterEsp == true
+				ZX.tsb.counterNotify = data.tsb.counterNotify ~= false
+				pcall(function() uiRefs.tsb_autoBlock:SetValue(ZX.tsb.autoBlock) end)
+				pcall(function() uiRefs.tsb_range:SetValue(ZX.tsb.range) end)
+				pcall(function() uiRefs.tsb_delay:SetValue(math.floor(ZX.tsb.delay * 1000)) end)
+				pcall(function() uiRefs.tsb_fov:SetValue(ZX.tsb.fov) end)
+				pcall(function() uiRefs.tsb_facing:SetValue(ZX.tsb.facing) end)
+				pcall(function() uiRefs.tsb_aimHelper:SetValue(ZX.tsb.aimHelper) end)
+				pcall(function() uiRefs.tsb_counterEsp:SetValue(ZX.tsb.counterEsp) end)
+				pcall(function() uiRefs.tsb_counterNotify:SetValue(ZX.tsb.counterNotify) end)
+			end
 			if type(data.sounds) == "table" then
 				if type(data.sounds.murdererKill) == "string" then ZX.sounds.murdererKill = data.sounds.murdererKill end
 				if type(data.sounds.sheriffKill) == "string" then ZX.sounds.sheriffKill = data.sounds.sheriffKill end
@@ -23859,6 +24313,12 @@ do
 		if gp then return end
 		if ZX.combat.shootKey and input.KeyCode == ZX.combat.shootKey then
 			pcall(triggerShootMurderer)
+		elseif ZX.tsb.blockKey and input.KeyCode == ZX.tsb.blockKey then
+			ZX.tsb.autoBlock = not ZX.tsb.autoBlock
+			pcall(function() uiRefs.tsb_autoBlock:SetValue(ZX.tsb.autoBlock) end)
+		elseif ZX.tsb.counterKey and input.KeyCode == ZX.tsb.counterKey then
+			ZX.tsb.counterEsp = not ZX.tsb.counterEsp
+			pcall(function() uiRefs.tsb_counterEsp:SetValue(ZX.tsb.counterEsp) end)
 		elseif ZX.movement.speedKey and input.KeyCode == ZX.movement.speedKey then
 			ZX.movement.speedGlitch = not ZX.movement.speedGlitch
 			pcall(function() uiRefs.move_speedGlitch:SetValue(ZX.movement.speedGlitch) end)
