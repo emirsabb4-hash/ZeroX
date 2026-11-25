@@ -24600,9 +24600,12 @@ do
 		Default = ZX.skins.enabled,
 		Callback = function(v)
 			ZX.skins.enabled = v
+			pcall(function() if uiRefs.skins_enabled_g then uiRefs.skins_enabled_g:SetValue(v) end end)
 			if not v then
+				local kSaved, gSaved = ZX.skins.knife, ZX.skins.gun
 				applyWeaponSkin("Knife", nil)
 				applyWeaponSkin("Gun", nil)
+				ZX.skins.knife, ZX.skins.gun = kSaved, gSaved
 			else
 				if ZX.skins.knife then applyWeaponSkin("Knife", ZX.skins.knife) end
 				if ZX.skins.gun then applyWeaponSkin("Gun", ZX.skins.gun) end
@@ -24639,9 +24642,12 @@ do
 		Default = ZX.skins.enabled,
 		Callback = function(v)
 			ZX.skins.enabled = v
+			pcall(function() if uiRefs.skins_enabled_k then uiRefs.skins_enabled_k:SetValue(v) end end)
 			if not v then
+				local kSaved, gSaved = ZX.skins.knife, ZX.skins.gun
 				applyWeaponSkin("Knife", nil)
 				applyWeaponSkin("Gun", nil)
+				ZX.skins.knife, ZX.skins.gun = kSaved, gSaved
 			else
 				if ZX.skins.knife then applyWeaponSkin("Knife", ZX.skins.knife) end
 				if ZX.skins.gun then applyWeaponSkin("Gun", ZX.skins.gun) end
@@ -24828,8 +24834,8 @@ do
 				},
 				skins = {
 					enabled = ZX.skins.enabled,
-					knife = ZX.skins.knife,
-					gun = ZX.skins.gun,
+					knife = type(ZX.skins.knife) == "table" and ZX.skins.knife.key or nil,
+					gun = type(ZX.skins.gun) == "table" and ZX.skins.gun.key or nil,
 				},
 				mapVote = { panel = ZX.mapVote.panel, count = ZX.mapVote.count },
 				universalEsp = {
@@ -24839,7 +24845,7 @@ do
 				},
 				antiFling = { enabled = ZX.antiFling.enabled },
 				sounds = { murdererKill = ZX.sounds.murdererKill, sheriffKill = ZX.sounds.sheriffKill, volume = ZX.sounds.volume },
-				tsb = { autoBlock = ZX.tsb.autoBlock, range = ZX.tsb.range, delay = ZX.tsb.delay, fov = ZX.tsb.fov, facing = ZX.tsb.facing, aimHelper = ZX.tsb.aimHelper, counterEsp = ZX.tsb.counterEsp, counterNotify = ZX.tsb.counterNotify },
+				tsb = { autoBlock = ZX.tsb.autoBlock, range = ZX.tsb.range, delay = ZX.tsb.delay, fov = ZX.tsb.fov, facing = ZX.tsb.facing, aimHelper = ZX.tsb.aimHelper, blockKey = ZX.tsb.blockKey and ZX.tsb.blockKey.Name or nil, counterEsp = ZX.tsb.counterEsp, counterNotify = ZX.tsb.counterNotify, counterKey = ZX.tsb.counterKey and ZX.tsb.counterKey.Name or nil },
 			}
 		end
 
@@ -24932,11 +24938,24 @@ do
 				pcall(function() uiRefs.aura_ultraInstinct:SetValue(ZX.aura.ultraInstinct) end)
 			end
 			if type(data.skins) == "table" then
-				ZX.skins.enabled = data.skins.enabled ~= false
+				ZX.skins.enabled = data.skins.enabled == true
+				local kKey = type(data.skins.knife) == "string" and data.skins.knife or (type(data.skins.knife) == "table" and data.skins.knife.key or nil)
+				local gKey = type(data.skins.gun) == "string" and data.skins.gun or (type(data.skins.gun) == "table" and data.skins.gun.key or nil)
+				local kEntry = kKey and skinCatalogData.ByKey[kKey] or (type(data.skins.knife) == "table" and data.skins.knife or nil)
+				local gEntry = gKey and skinCatalogData.ByKey[gKey] or (type(data.skins.gun) == "table" and data.skins.gun or nil)
+				ZX.skins.knife = kEntry
+				ZX.skins.gun = gEntry
 				pcall(function() uiRefs.skins_enabled_k:SetValue(ZX.skins.enabled) end)
 				pcall(function() uiRefs.skins_enabled_g:SetValue(ZX.skins.enabled) end)
-				if data.skins.knife then applyWeaponSkin("Knife", data.skins.knife) end
-				if data.skins.gun then applyWeaponSkin("Gun", data.skins.gun) end
+				if ZX.skins.enabled then
+					if kEntry then pcall(applyWeaponSkin, "Knife", kEntry) end
+					if gEntry then pcall(applyWeaponSkin, "Gun", gEntry) end
+				else
+					pcall(applyWeaponSkin, "Knife", nil)
+					pcall(applyWeaponSkin, "Gun", nil)
+					ZX.skins.knife = kEntry
+					ZX.skins.gun = gEntry
+				end
 			end
 			if type(data.mapVote) == "table" then
 				ZX.mapVote.panel = true
@@ -24959,6 +24978,10 @@ do
 				ZX.tsb.aimHelper = data.tsb.aimHelper == true
 				ZX.tsb.counterEsp = data.tsb.counterEsp == true
 				ZX.tsb.counterNotify = data.tsb.counterNotify ~= false
+				ZX.tsb.blockKey = (type(data.tsb.blockKey) == "string" and Enum.KeyCode[data.tsb.blockKey]) or nil
+				ZX.tsb.counterKey = (type(data.tsb.counterKey) == "string" and Enum.KeyCode[data.tsb.counterKey]) or nil
+				pcall(function() uiRefs.tsb_blockKey:SetValue(ZX.tsb.blockKey and ZX.tsb.blockKey.Name or nil) end)
+				pcall(function() uiRefs.tsb_counterKey:SetValue(ZX.tsb.counterKey and ZX.tsb.counterKey.Name or nil) end)
 				pcall(function() uiRefs.tsb_autoBlock:SetValue(ZX.tsb.autoBlock) end)
 				pcall(function() uiRefs.tsb_range:SetValue(ZX.tsb.range) end)
 				pcall(function() uiRefs.tsb_delay:SetValue(math.floor(ZX.tsb.delay * 1000)) end)
