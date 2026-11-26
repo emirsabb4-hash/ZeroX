@@ -24377,15 +24377,20 @@ function NeverLose:CreateWindow(cfg)
 		end;
 
 		pcall(function() lib:setopener(false) end);
+		pcall(function() lib:setwatermark(false) end);
 
-		local watermarkOn = true;
+		local watermarkOn = false;
 
 		function NeverLose.SetWatermark(on)
 			watermarkOn = on and true or false;
 
 			pcall(function() lib:setwatermark(watermarkOn) end);
 
-			pcall(function() lib:setopener(NeverLose.Mobile and not watermarkOn) end);
+			pcall(function() lib:setopener(false) end);
+		end;
+
+		function Window:Toggle()
+			pcall(function() win:toggle() end);
 		end;
 	end;
 
@@ -24570,6 +24575,194 @@ do
 	ZX.menuFrame = Window.Frame
 	local uiRefs = {}
 
+	local refreshTouchButton
+	do
+		local UserInputService = game:GetService("UserInputService")
+		local touchGuiParent = nil
+		pcall(function()
+			if type(gethui) == "function" then touchGuiParent = gethui() end
+		end)
+		if not touchGuiParent then
+			pcall(function() touchGuiParent = game:GetService("CoreGui") end)
+		end
+		if not touchGuiParent then
+			touchGuiParent = player:WaitForChild("PlayerGui")
+		end
+
+		local oldGui = touchGuiParent:FindFirstChild("ZeroX_TouchButtons")
+		if oldGui then pcall(function() oldGui:Destroy() end) end
+
+		local touchGui = Instance.new("ScreenGui")
+		touchGui.Name = "ZeroX_TouchButtons"
+		touchGui.ResetOnSpawn = false
+		touchGui.IgnoreGuiInset = true
+		touchGui.DisplayOrder = 999999
+		touchGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+		touchGui.Parent = touchGuiParent
+
+		local function makeDraggableAndTap(btn, onTap)
+			local dragging = false
+			local moved = false
+			local dragInput = nil
+			local startPos = nil
+			local startBtnPos = nil
+
+			btn.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+					dragging = true
+					moved = false
+					dragInput = input
+					startPos = input.Position
+					startBtnPos = btn.Position
+				end
+			end)
+
+			UserInputService.InputChanged:Connect(function(input)
+				if dragging and input == dragInput then
+					local delta = input.Position - startPos
+					if delta.Magnitude >= 8 then
+						moved = true
+						btn.Position = UDim2.new(
+							startBtnPos.X.Scale,
+							startBtnPos.X.Offset + delta.X,
+							startBtnPos.Y.Scale,
+							startBtnPos.Y.Offset + delta.Y
+						)
+					end
+				end
+			end)
+
+			UserInputService.InputEnded:Connect(function(input)
+				if dragging and input == dragInput then
+					dragging = false
+					dragInput = nil
+					if not moved and onTap then
+						pcall(onTap)
+					end
+				end
+			end)
+		end
+
+		-- UI Open/Close Toggle Button (always visible, draggable)
+		local uiBtn = Instance.new("TextButton")
+		uiBtn.Name = "ZeroX_UIToggle"
+		uiBtn.Size = UDim2.fromOffset(92, 34)
+		uiBtn.Position = UDim2.new(0, 14, 0, 14)
+		uiBtn.BackgroundColor3 = Color3.fromRGB(13, 17, 24)
+		uiBtn.BackgroundTransparency = 0.08
+		uiBtn.BorderSizePixel = 0
+		uiBtn.Text = "ZeroX"
+		uiBtn.Font = Enum.Font.GothamBold
+		uiBtn.TextSize = 14
+		uiBtn.TextColor3 = Color3.fromRGB(56, 189, 248)
+		uiBtn.AutoButtonColor = false
+		uiBtn.Parent = touchGui
+
+		local uiCorner = Instance.new("UICorner")
+		uiCorner.CornerRadius = UDim.new(0, 10)
+		uiCorner.Parent = uiBtn
+
+		local uiStroke = Instance.new("UIStroke")
+		uiStroke.Color = Color3.fromRGB(56, 189, 248)
+		uiStroke.Thickness = 1.5
+		uiStroke.Transparency = 0.2
+		uiStroke.Parent = uiBtn
+
+		makeDraggableAndTap(uiBtn, function()
+			if Window.Toggle then
+				Window:Toggle()
+			elseif ZX.menuFrame then
+				ZX.menuFrame.Visible = not ZX.menuFrame.Visible
+			end
+		end)
+
+		local btnRefs = {}
+		local defaultPos = {
+			shoot = UDim2.new(1, -140, 0.55, -24),
+			speed = UDim2.new(1, -145, 0.42, -24),
+		}
+
+		local function styleButtonState(kind)
+			local entry = btnRefs[kind]
+			if not entry then return end
+			if kind == "speed" then
+				local active = ZX.movement.speedGlitch == true
+				entry.stroke.Color = active and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(71, 85, 105)
+				entry.btn.TextColor3 = active and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(226, 232, 240)
+				entry.btn.Text = active and "SPEED: ON" or "SPEED"
+			else
+				entry.stroke.Color = Color3.fromRGB(56, 189, 248)
+				entry.btn.TextColor3 = Color3.fromRGB(241, 245, 249)
+				entry.btn.Text = "SHOOT"
+			end
+		end
+
+		local function createTouchButton(kind)
+			local btn = Instance.new("TextButton")
+			btn.Name = "ZeroX_Touch_" .. kind
+			btn.Position = defaultPos[kind] or UDim2.new(0.8, 0, 0.5, 0)
+			btn.BackgroundColor3 = Color3.fromRGB(13, 17, 24)
+			btn.BackgroundTransparency = 0.12
+			btn.BorderSizePixel = 0
+			btn.Font = Enum.Font.GothamBold
+			btn.TextSize = 14
+			btn.AutoButtonColor = false
+			btn.Visible = false
+			btn.Parent = touchGui
+
+			local corner = Instance.new("UICorner")
+			corner.Parent = btn
+
+			local stroke = Instance.new("UIStroke")
+			stroke.Thickness = 1.6
+			stroke.Transparency = 0.15
+			stroke.Parent = btn
+
+			btnRefs[kind] = { btn = btn, corner = corner, stroke = stroke }
+			styleButtonState(kind)
+
+			makeDraggableAndTap(btn, function()
+				if kind == "shoot" then
+					if triggerShootMurderer then
+						pcall(triggerShootMurderer)
+					end
+					btn.BackgroundColor3 = Color3.fromRGB(28, 65, 92)
+					task.delay(0.14, function()
+						if btn.Parent then btn.BackgroundColor3 = Color3.fromRGB(13, 17, 24) end
+					end)
+				elseif kind == "speed" then
+					ZX.movement.speedGlitch = not ZX.movement.speedGlitch
+					pcall(function()
+						if uiRefs.move_speedGlitch and uiRefs.move_speedGlitch.SetValue then
+							uiRefs.move_speedGlitch:SetValue(ZX.movement.speedGlitch)
+						end
+					end)
+					styleButtonState("speed")
+				end
+			end)
+		end
+
+		refreshTouchButton = function(kind)
+			local cfg = ZX.mobileButtons and ZX.mobileButtons[kind]
+			if not cfg then return end
+			if not btnRefs[kind] then createTouchButton(kind) end
+			local entry = btnRefs[kind]
+			local w = tonumber(cfg.width) or 110
+			local h = tonumber(cfg.height) or 46
+			if cfg.shape == "Circle" then
+				local side = math.min(w, h)
+				entry.btn.Size = UDim2.fromOffset(side, side)
+				entry.corner.CornerRadius = UDim.new(1, 0)
+			else
+				entry.btn.Size = UDim2.fromOffset(w, h)
+				entry.corner.CornerRadius = UDim.new(0, tonumber(cfg.radius) or 12)
+			end
+			styleButtonState(kind)
+			entry.btn.Visible = cfg.enabled == true
+		end
+	end
+
+
 	-- EN ÜSTTE TEK SEKME: Main (Açılır/kapanır grup değil, doğrudan sekme)
 	local MainTab = Window:AddTab({ Icon = "home", Name = "Main" })
 
@@ -24585,7 +24778,7 @@ do
 	})
 
 	local speedSec = MainTab:AddSection({ Name = "Speed Glitch", Position = "left" })
-	uiRefs.move_speedGlitch = speedSec:AddLabel("Speed Glitch"):AddToggle({ Default = ZX.movement.speedGlitch, Callback = function(v) ZX.movement.speedGlitch = v end })
+	uiRefs.move_speedGlitch = speedSec:AddLabel("Speed Glitch"):AddToggle({ Default = ZX.movement.speedGlitch, Callback = function(v) ZX.movement.speedGlitch = v; pcall(refreshTouchButton, "speed") end })
 	uiRefs.move_speedPower  = speedSec:AddLabel("Speed Power"):AddSlider({
 		Min = 16, Max = 100, Default = ZX.movement.speedPower,
 		Callback = function(v) ZX.movement.speedPower = v end,
