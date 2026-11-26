@@ -70,6 +70,13 @@ local ZX = {
 	aura = {
 		whiteSpark    = false,
 		ultraInstinct = false,
+		angelic       = false,
+		nimb          = false,
+		angelicColor  = Color3.fromRGB(165, 225, 255),
+	},
+	screen = {
+		stretched = false,
+		stretch   = 75,
 	},
 	character = {
 		korblox  = false,
@@ -134,6 +141,7 @@ local ZX = {
 		murdererKill = "Default",
 		sheriffKill  = "Default",
 		volume       = 80,
+		uiSounds     = true,
 	},
 }
 
@@ -1670,32 +1678,70 @@ do
 		end
 	end)
 
-	-- SPEED GLITCH (Zıplayıp dönerken hız kaybını/kaymayı kapatır + hava hızını artırır)
-	RunService.Heartbeat:Connect(function()
-		if not ZX.movement.speedGlitch then return end
-		local char = player.Character
-		local hum  = char and char:FindFirstChildOfClass("Humanoid")
-		local root = char and char:FindFirstChild("HumanoidRootPart")
-		if not (char and hum and root and hum.Health > 0) then return end
+	-- SPEED GLITCH (PulseHub Smooth Air-Accel Method — zero Invalid Position)
+	do
+		local sgSpeed = 0
+		local sgAirborne = false
+		local sgLandedAt = 0
+		local sgAccel = 60
 
-		local moveDir = hum.MoveDirection
-		if moveDir.Magnitude < 0.05 then return end
-
-		local state = hum:GetState()
-		local isAir = (hum.FloorMaterial == Enum.Material.Air)
-			or (state == Enum.HumanoidStateType.Jumping)
-			or (state == Enum.HumanoidStateType.Freefall)
-
-		if isAir then
-			local dir = Vector3.new(moveDir.X, 0, moveDir.Z)
-			if dir.Magnitude > 0.01 then
-				dir = dir.Unit
-				local spd = ZX.movement.speedPower or 38
-				local curY = root.AssemblyLinearVelocity.Y
-				root.AssemblyLinearVelocity = Vector3.new(dir.X * spd, curY, dir.Z * spd)
+		RunService.Heartbeat:Connect(function(delta)
+			if not ZX.movement.speedGlitch then
+				sgSpeed, sgAirborne = 0, false
+				return
 			end
-		end
-	end)
+			local char = player.Character
+			local hum  = char and char:FindFirstChildOfClass("Humanoid")
+			local root = hum and (hum.RootPart or char:FindFirstChild("HumanoidRootPart"))
+			if not (char and hum and root and hum.Health > 0) then
+				sgSpeed, sgAirborne = 0, false
+				return
+			end
+
+			local status = hum:GetState()
+			if status == Enum.HumanoidStateType.Climbing
+				or status == Enum.HumanoidStateType.Swimming
+				or status == Enum.HumanoidStateType.Seated
+				or status == Enum.HumanoidStateType.Dead then
+				sgSpeed, sgAirborne = 0, false
+				return
+			end
+
+			delta = math.min(delta or (1 / 60), 0.1)
+			local now = os.clock()
+			local inAir = (status == Enum.HumanoidStateType.Freefall)
+				or (status == Enum.HumanoidStateType.Jumping)
+				or (hum.FloorMaterial == Enum.Material.Air)
+
+			local direction = hum.MoveDirection
+			local movement = Vector3.new(direction.X, 0, direction.Z)
+			local moving = movement.Magnitude > 0.1
+			local velocity = root.AssemblyLinearVelocity
+			local horizontal = Vector3.new(velocity.X, 0, velocity.Z)
+			local current = horizontal.Magnitude
+			local maxSpd = tonumber(ZX.movement.speedPower) or 38
+
+			if inAir then
+				sgAirborne = true
+				if moving then
+					sgSpeed = math.max(sgSpeed, hum.WalkSpeed)
+					if current > sgSpeed and current <= maxSpd then sgSpeed = current end
+					if sgSpeed < maxSpd then sgSpeed = math.min(maxSpd, sgSpeed + sgAccel * delta) end
+				end
+			else
+				if sgAirborne then sgAirborne, sgLandedAt = false, now end
+				if now - sgLandedAt > 0.3 then sgSpeed = 0 end
+			end
+
+			sgSpeed = math.min(sgSpeed, maxSpd)
+			if sgSpeed > 0 and moving and (inAir or (now - sgLandedAt <= 0.25)) and current < sgSpeed + 1 then
+				local desired = movement.Unit * sgSpeed
+				if (horizontal - desired).Magnitude > 0.5 then
+					root.AssemblyLinearVelocity = Vector3.new(desired.X, velocity.Y, desired.Z)
+				end
+			end
+		end)
+	end
 end
 
 -- =========================================================================
@@ -2486,7 +2532,7 @@ local GAZER_ANIMS = {
 local GAZER_ANIM_CATS = { "Idle", "Walk", "Run", "Jump", "Fall", "Swim", "SwimIdle", "Climb" }
 local GAZER_ANIM_NAMES = {}
 for _, cat in ipairs(GAZER_ANIM_CATS) do
-	local list = { "Default" }
+	local list = { "Default", "Chill Boy" }
 	local tmp = {}
 	for name in pairs(GAZER_ANIMS[cat]) do
 		table.insert(tmp, name)
@@ -2551,9 +2597,51 @@ do
 		return "http://www.roblox.com/asset/?id=" .. s
 	end
 
+	local CHILL_BOY_ITEMS = {
+		Idle     = 79638430446468,
+		Walk     = 125935884379030,
+		Run      = 140668178711040,
+		Jump     = 121044668035612,
+		Fall     = 90121153486837,
+		Climb    = 107026478538282,
+		Swim     = 74464049474878,
+		SwimIdle = 74464049474878,
+	}
+	local _chillBoyCache = {}
+	local function resolveChillBoy(cat)
+		if _chillBoyCache[cat] then return _chillBoyCache[cat] end
+		local itemId = CHILL_BOY_ITEMS[cat]
+		if not itemId then return nil end
+		local ok, objs = pcall(function() return game:GetObjects("rbxassetid://" .. tostring(itemId)) end)
+		if not ok or type(objs) ~= "table" or not objs[1] then return nil end
+		local root = objs[1]
+		local found = {}
+		local function scan(inst)
+			if inst:IsA("Animation") and inst.AnimationId ~= "" then
+				table.insert(found, inst.AnimationId)
+			end
+			for _, ch in ipairs(inst:GetDescendants()) do
+				if ch:IsA("Animation") and ch.AnimationId ~= "" then
+					table.insert(found, ch.AnimationId)
+				end
+			end
+		end
+		scan(root)
+		pcall(function() root:Destroy() end)
+		if #found == 0 then return nil end
+		if cat == "Idle" then
+			_chillBoyCache[cat] = { found[1], found[2] or found[1] }
+		else
+			_chillBoyCache[cat] = found[1]
+		end
+		return _chillBoyCache[cat]
+	end
+
 	ApplyFEAnimation = function(cat, name)
 		if not GAZER_ANIMS[cat] then return end
-		if not name or name == "Default" or not GAZER_ANIMS[cat][name] then
+		if name == "Chill Boy" then
+			ZX.animations[cat] = "Chill Boy"
+		elseif not name or name == "Default" or not GAZER_ANIMS[cat][name] then
 			ZX.animations[cat] = "Default"
 		else
 			ZX.animations[cat] = name
@@ -2568,7 +2656,14 @@ do
 		captureOrig(Animate)
 		stopTracks(Hum)
 
-		local val = (ZX.animations[cat] ~= "Default") and GAZER_ANIMS[cat][ZX.animations[cat]] or _origAnimIds[cat]
+		local val
+		if ZX.animations[cat] == "Chill Boy" then
+			val = resolveChillBoy(cat)
+		elseif ZX.animations[cat] ~= "Default" then
+			val = GAZER_ANIMS[cat][ZX.animations[cat]]
+		else
+			val = _origAnimIds[cat]
+		end
 		if not val then return end
 
 		pcall(function()
@@ -2896,6 +2991,165 @@ do
 		if ZX.customChar.enabled then
 			pcall(ApplyCustomCharacter)
 		end
+	end)
+end
+
+-- =========================================================================
+-- 6.6) ANGELIC WINGS + NIMB HALO + STRETCHED SCREEN
+-- =========================================================================
+local applyAngelicNimb
+local updateAngelicNimbColor
+do
+	local activeItems = {}
+	local activeColor = nil
+
+	local function clearAngelicNimb()
+		for _, item in ipairs(activeItems) do
+			pcall(function() item:Destroy() end)
+		end
+		activeItems = {}
+		local char = player.Character
+		if char then
+			for _, d in ipairs(char:GetDescendants()) do
+				if d.Name == "ZeroX_AngelicNimb" then
+					pcall(function() d:Destroy() end)
+				end
+			end
+		end
+	end
+
+	local function anchorTo(part, cf)
+		local att = Instance.new("Attachment")
+		att.Name = "ZeroX_AngelicNimb"
+		att.CFrame = cf
+		att.Parent = part
+		table.insert(activeItems, att)
+		return att
+	end
+
+	updateAngelicNimbColor = function(col)
+		if typeof(col) == "Color3" then
+			ZX.aura.angelicColor = col
+		end
+		local c = ZX.aura.angelicColor or Color3.fromRGB(165, 225, 255)
+		for _, item in ipairs(activeItems) do
+			if item and item.Parent and item:IsA("ParticleEmitter") then
+				pcall(function() item.Color = ColorSequence.new(c) end)
+			end
+		end
+	end
+
+	applyAngelicNimb = function()
+		clearAngelicNimb()
+		local char = player.Character
+		if not char then return end
+		local c = ZX.aura.angelicColor or Color3.fromRGB(165, 225, 255)
+
+		if ZX.aura.angelic then
+			local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+			if torso then
+				local left = anchorTo(torso, CFrame.new(-1.012, 0.5, 0.852, 0.966, 0, 0.259, 0, 1, 0, -0.259, 0, 0.966))
+				local wingL = Instance.new("ParticleEmitter")
+				wingL.Name = "ZeroX_AngelicNimb"
+				wingL.Lifetime = NumberRange.new(1, 1)
+				wingL.LockedToPart = true
+				wingL.Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0.944),
+					NumberSequenceKeypoint.new(0.2, 0),
+					NumberSequenceKeypoint.new(0.8, 0),
+					NumberSequenceKeypoint.new(1, 1),
+				})
+				wingL.LightEmission = 1
+				wingL.Color = ColorSequence.new(c)
+				wingL.Speed = NumberRange.new(0.05, 0.05)
+				wingL.Size = NumberSequence.new(2.75, 3.5)
+				wingL.Rate = 4
+				wingL.Texture = "rbxassetid://13267054240"
+				wingL.EmissionDirection = Enum.NormalId.Back
+				wingL.Orientation = Enum.ParticleOrientation.VelocityPerpendicular
+				wingL.Rotation = NumberRange.new(-15, -15)
+				wingL.Parent = left
+				table.insert(activeItems, wingL)
+
+				local right = anchorTo(torso, CFrame.new(1.167, 0.5, 0.852, 0.966, 0, -0.259, 0, 1, 0, 0.259, 0, 0.966))
+				local wingR = wingL:Clone()
+				wingR.EmissionDirection = Enum.NormalId.Front
+				wingR.Parent = right
+				table.insert(activeItems, wingR)
+
+				local core = anchorTo(torso, CFrame.new(0, 0.3, 0))
+				local burst = Instance.new("ParticleEmitter")
+				burst.Name = "ZeroX_AngelicNimb"
+				burst.Lifetime = NumberRange.new(2, 2)
+				burst.FlipbookLayout = Enum.ParticleFlipbookLayout.Grid4x4
+				burst.SpreadAngle = Vector2.new(180, 180)
+				burst.LockedToPart = true
+				burst.Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 1),
+					NumberSequenceKeypoint.new(0.5, 0.3),
+					NumberSequenceKeypoint.new(1, 1),
+				})
+				burst.LightEmission = 1
+				burst.Color = ColorSequence.new(c)
+				burst.Speed = NumberRange.new(0.5, 0.5)
+				burst.Brightness = 2
+				burst.Size = NumberSequence.new(3, 4)
+				burst.Rate = 5
+				burst.Texture = "rbxassetid://11402221943"
+				burst.FlipbookMode = Enum.ParticleFlipbookMode.OneShot
+				burst.Rotation = NumberRange.new(0, 360)
+				burst.Parent = core
+				table.insert(activeItems, burst)
+			end
+		end
+
+		if ZX.aura.nimb then
+			local head = char:FindFirstChild("Head")
+			if head then
+				local halo = anchorTo(head, CFrame.new(-0.25, 0.933, 0.259, 0.469, -0.25, -0.847, -0.117, 0.933, -0.34, 0.875, 0.259, 0.408))
+				for idx = 1, 2 do
+					local emitter = Instance.new("ParticleEmitter")
+					emitter.Name = "ZeroX_AngelicNimb"
+					emitter.Lifetime = NumberRange.new(1, 1)
+					emitter.SpreadAngle = Vector2.new(5, 5)
+					emitter.LockedToPart = true
+					emitter.Transparency = NumberSequence.new({
+						NumberSequenceKeypoint.new(0, 1),
+						NumberSequenceKeypoint.new(0.2, 0),
+						NumberSequenceKeypoint.new(0.8, 0),
+						NumberSequenceKeypoint.new(1, 1),
+					})
+					emitter.LightEmission = 1
+					emitter.Color = ColorSequence.new(c)
+					emitter.Speed = NumberRange.new(0.001, 0.001)
+					emitter.Brightness = 2
+					emitter.Size = (idx == 1) and NumberSequence.new(2.5, 3) or NumberSequence.new(2, 3)
+					emitter.RotSpeed = NumberRange.new(-400, 400)
+					emitter.Rate = 7
+					emitter.Texture = "rbxassetid://8819682608"
+					emitter.Orientation = Enum.ParticleOrientation.VelocityPerpendicular
+					emitter.Rotation = NumberRange.new(0, 360)
+					emitter.Parent = halo
+					table.insert(activeItems, emitter)
+				end
+			end
+		end
+	end
+
+	player.CharacterAdded:Connect(function()
+		task.wait(0.35)
+		if ZX.aura.angelic or ZX.aura.nimb then
+			pcall(applyAngelicNimb)
+		end
+	end)
+
+	-- Stretched Screen (standard Camera.CFrame vertical scale)
+	RunService.RenderStepped:Connect(function()
+		if not (ZX.screen and ZX.screen.stretched) then return end
+		local cam = Workspace.CurrentCamera
+		if not cam then return end
+		local scaleY = math.clamp((tonumber(ZX.screen.stretch) or 75) / 100, 0.30, 1.0)
+		cam.CFrame = cam.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, scaleY, 0, 0, 0, 1)
 	end)
 end
 
@@ -7136,27 +7390,16 @@ local muteGunSounds
 do
 	local SoundService = game:GetService("SoundService")
 	local MURDERER_SOUNDS = {
-		Default    = nil,
-		HolyShit   = "rbxassetid://72215662025854",
-		Slash      = "rbxassetid://5989945551",
-		FleshSlash = "rbxassetid://9114486308",
-		Stab       = "rbxassetid://9116197517",
-		BoneCrush  = "rbxassetid://9113546532",
-		Boom       = "rbxassetid://157878578",
-		Void       = "rbxassetid://6737582625",
-		Shatter    = "rbxassetid://2174790942",
-		Thunder    = "rbxassetid://1079408535",
-		Demon      = "rbxassetid://9114038247",
-		Fireball   = "rbxassetid://9117985933",
-		Explode    = "rbxassetid://130118643084565",
-		Bell       = "rbxassetid://1034263055",
+		Default   = nil,
+		SwordWhip = "rbxassetid://9119750538",
+		Void      = "rbxassetid://6737582625",
+		Shatter   = "rbxassetid://2174790942",
 	}
 	local SHERIFF_SOUNDS = {
 		Default  = nil,
-		Rampage  = "rbxassetid://80741697609140",
 		Velocity = "rbxassetid://108543399583882",
 		Sniper   = "rbxassetid://15666290706",
-		Laser    = "rbxassetid://9116225555",
+		Explode  = "rbxassetid://130118643084565",
 	}
 
 	local activeMurdSound = nil
@@ -20949,8 +21192,25 @@ function visualsui:window(cfg)
 		end)
 	end
 
+	local function playZeroXUiSound(id, vol)
+		if ZX and ZX.sounds and ZX.sounds.uiSounds == false then return end
+		pcall(function()
+			local ss = game:GetService("SoundService")
+			local s = Instance.new("Sound")
+			s.Name = "ZeroX_UISound"
+			s.SoundId = id
+			s.Volume = vol or 0.35
+			s.Parent = ss
+			s:Play()
+			s.Ended:Connect(function() pcall(function() s:Destroy() end) end)
+			task.delay(2, function() if s and s.Parent then pcall(function() s:Destroy() end) end end)
+		end)
+	end
+
 	function win:toggle()
-		win:render(not win.open)
+		local nextOpen = not win.open
+		playZeroXUiSound(nextOpen and "rbxassetid://6895079853" or "rbxassetid://9119713951", 0.35)
+		win:render(nextOpen)
 	end
 
 	conn(shell:GetPropertyChangedSignal("Visible"), function()
@@ -23645,13 +23905,31 @@ local function makeRow(section, caption)
 		cfg = cfg or {};
 
 		local target, name = placeFor("Enabled");
+		local origCb = cfg.Callback;
+		local wrappedCb = function(v)
+			if not (lib.quiet or lib.configApplying) and ZX and ZX.sounds and ZX.sounds.uiSounds ~= false then
+				pcall(function()
+					local ss = game:GetService("SoundService")
+					local s = Instance.new("Sound")
+					s.Name = "ZeroX_ToggleSound"
+					s.SoundId = "rbxasset://sounds/clickfast.wav"
+					s.Volume = 0.3
+					s.PlaybackSpeed = v and 1.15 or 0.88
+					s.Parent = ss
+					s:Play()
+					s.Ended:Connect(function() pcall(function() s:Destroy() end) end)
+					task.delay(1.5, function() if s and s.Parent then pcall(function() s:Destroy() end) end end)
+				end)
+			end
+			if origCb then origCb(v) end
+		end;
 
 		local element = target:toggle({
 			name = name,
 			default = cfg.Default and true or false,
 			options = true,
 			flag = cfg.Flag,
-			callback = report(cfg.Flag, cfg.Callback),
+			callback = report(cfg.Flag, wrappedCb),
 		});
 
 		row.__toggle = element;
@@ -24727,6 +25005,16 @@ do
 		end,
 	})
 
+	local screenSec = VisualsGroup.Auras:AddSection({ Name = "Screen", Position = "right" })
+	uiRefs.screen_stretched = screenSec:AddLabel("Stretched Screen"):AddToggle({
+		Default = ZX.screen.stretched,
+		Callback = function(v) ZX.screen.stretched = v == true end,
+	})
+	uiRefs.screen_stretch = screenSec:AddLabel("Stretch Amount"):AddSlider({
+		Min = 30, Max = 100, Default = ZX.screen.stretch, Suffix = "%",
+		Callback = function(v) ZX.screen.stretch = v end,
+	})
+
 	local charSec = VisualsGroup.Character:AddSection({ Name = "Character", Position = "left" })
 	uiRefs.char_korblox = charSec:AddLabel("Korblox"):AddToggle({
 		Default = ZX.character.korblox,
@@ -24735,6 +25023,18 @@ do
 	uiRefs.char_headless = charSec:AddLabel("Headless"):AddToggle({
 		Default = ZX.character.headless,
 		Callback = function(v) pcall(applyHeadless, v) end,
+	})
+	uiRefs.aura_angelic = charSec:AddLabel("Angelic Wings"):AddToggle({
+		Default = ZX.aura.angelic,
+		Callback = function(v) ZX.aura.angelic = v == true; pcall(applyAngelicNimb) end,
+	})
+	uiRefs.aura_nimb = charSec:AddLabel("Nimb Halo"):AddToggle({
+		Default = ZX.aura.nimb,
+		Callback = function(v) ZX.aura.nimb = v == true; pcall(applyAngelicNimb) end,
+	})
+	uiRefs.aura_angelicColor = charSec:AddLabel("Angelic / Nimb Color"):AddColorPicker({
+		Default = ZX.aura.angelicColor,
+		Callback = function(c) pcall(updateAngelicNimbColor, c) end,
 	})
 	uiRefs.customChar_enabled = charSec:AddLabel("Custom Character"):AddToggle({
 		Default = ZX.customChar.enabled,
@@ -24800,6 +25100,19 @@ do
 		Values = GAZER_ANIM_NAMES.Climb,
 		Default = ZX.animations.Climb,
 		Callback = function(v) pcall(ApplyFEAnimation, "Climb", v) end,
+	})
+	animSec:AddButton({
+		Name = "Equip Chill Boy Pack",
+		Callback = function()
+			for _, cat in ipairs(GAZER_ANIM_CATS) do
+				ZX.animations[cat] = "Chill Boy"
+				pcall(ApplyFEAnimation, cat, "Chill Boy")
+				pcall(function()
+					local r = uiRefs["anim_" .. cat]
+					if r and r.SetValue then r:SetValue("Chill Boy") end
+				end)
+			end
+		end,
 	})
 	animSec:AddButton({
 		Name = "Reset Animations",
@@ -24900,14 +25213,18 @@ do
 
 	local sndSec = MM2Group.Sounds:AddSection({ Name = "Kill Sounds", Position = "left" })
 	uiRefs.sounds_murderer = sndSec:AddLabel("Murderer Kill Sound"):AddDropdown({
-		Values = { "Default", "HolyShit", "Slash", "FleshSlash", "Stab", "BoneCrush", "Boom", "Void", "Shatter", "Thunder", "Demon", "Fireball", "Explode", "Bell" },
+		Values = { "Default", "SwordWhip", "Void", "Shatter" },
 		Default = ZX.sounds.murdererKill,
 		Callback = function(v) if type(v) == "string" then ZX.sounds.murdererKill = v end end,
 	})
 	uiRefs.sounds_sheriff = sndSec:AddLabel("Sheriff Kill Sound"):AddDropdown({
-		Values = { "Default", "Rampage", "Velocity", "Sniper", "Laser" },
+		Values = { "Default", "Velocity", "Sniper", "Explode" },
 		Default = ZX.sounds.sheriffKill,
 		Callback = function(v) if type(v) == "string" then ZX.sounds.sheriffKill = v end end,
+	})
+	uiRefs.sounds_ui = sndSec:AddLabel("UI Sounds"):AddToggle({
+		Default = ZX.sounds.uiSounds,
+		Callback = function(v) ZX.sounds.uiSounds = v == true end,
 	})
 	uiRefs.sounds_volume = sndSec:AddLabel("Volume"):AddSlider({
 		Min = 0, Max = 100, Default = ZX.sounds.volume,
@@ -25195,7 +25512,14 @@ do
 					speedGlitch = ZX.movement.speedGlitch, speedPower = ZX.movement.speedPower,
 					speedKey = ZX.movement.speedKey and ZX.movement.speedKey.Name or nil,
 				},
-				aura = { whiteSpark = ZX.aura.whiteSpark, ultraInstinct = ZX.aura.ultraInstinct },
+				aura = {
+					whiteSpark = ZX.aura.whiteSpark,
+					ultraInstinct = ZX.aura.ultraInstinct,
+					angelic = ZX.aura.angelic,
+					nimb = ZX.aura.nimb,
+					angelicColor = ZX.aura.angelicColor and { ZX.aura.angelicColor.R, ZX.aura.angelicColor.G, ZX.aura.angelicColor.B } or nil,
+				},
+				screen = { stretched = ZX.screen.stretched, stretch = ZX.screen.stretch },
 				character = { korblox = ZX.character.korblox, headless = ZX.character.headless },
 				customChar = { enabled = ZX.customChar.enabled, selected = ZX.customChar.selected },
 				skybox = { selected = ZX.skybox.selected },
@@ -25221,7 +25545,7 @@ do
 					teamCheck = ZX.universalEsp.teamCheck,
 				},
 				antiFling = { enabled = ZX.antiFling.enabled },
-				sounds = { murdererKill = ZX.sounds.murdererKill, sheriffKill = ZX.sounds.sheriffKill, volume = ZX.sounds.volume },
+				sounds = { murdererKill = ZX.sounds.murdererKill, sheriffKill = ZX.sounds.sheriffKill, volume = ZX.sounds.volume, uiSounds = ZX.sounds.uiSounds },
 				tsb = { autoBlock = ZX.tsb.autoBlock, range = ZX.tsb.range, delay = ZX.tsb.delay, fov = ZX.tsb.fov, facing = ZX.tsb.facing, aimHelper = ZX.tsb.aimHelper, blockKey = ZX.tsb.blockKey and ZX.tsb.blockKey.Name or nil, counterEsp = ZX.tsb.counterEsp, counterNotify = ZX.tsb.counterNotify, counterKey = ZX.tsb.counterKey and ZX.tsb.counterKey.Name or nil },
 			}
 		end
@@ -25317,9 +25641,24 @@ do
 			if type(data.aura) == "table" then
 				ZX.aura.whiteSpark = data.aura.whiteSpark == true
 				ZX.aura.ultraInstinct = data.aura.ultraInstinct == true
+				ZX.aura.angelic = data.aura.angelic == true
+				ZX.aura.nimb = data.aura.nimb == true
+				if type(data.aura.angelicColor) == "table" and #data.aura.angelicColor >= 3 then
+					ZX.aura.angelicColor = Color3.new(data.aura.angelicColor[1], data.aura.angelicColor[2], data.aura.angelicColor[3])
+				end
 				pcall(applyAuras)
+				pcall(applyAngelicNimb)
 				pcall(function() uiRefs.aura_whiteSpark:SetValue(ZX.aura.whiteSpark) end)
 				pcall(function() uiRefs.aura_ultraInstinct:SetValue(ZX.aura.ultraInstinct) end)
+				pcall(function() uiRefs.aura_angelic:SetValue(ZX.aura.angelic) end)
+				pcall(function() uiRefs.aura_nimb:SetValue(ZX.aura.nimb) end)
+				pcall(function() uiRefs.aura_angelicColor:SetValue(ZX.aura.angelicColor) end)
+			end
+			if type(data.screen) == "table" then
+				ZX.screen.stretched = data.screen.stretched == true
+				ZX.screen.stretch = tonumber(data.screen.stretch) or 75
+				pcall(function() uiRefs.screen_stretched:SetValue(ZX.screen.stretched) end)
+				pcall(function() uiRefs.screen_stretch:SetValue(ZX.screen.stretch) end)
 			end
 			if type(data.skins) == "table" then
 				ZX.skins.enabled = data.skins.enabled == true
@@ -25379,9 +25718,11 @@ do
 				if type(data.sounds.murdererKill) == "string" then ZX.sounds.murdererKill = data.sounds.murdererKill end
 				if type(data.sounds.sheriffKill) == "string" then ZX.sounds.sheriffKill = data.sounds.sheriffKill end
 				ZX.sounds.volume = tonumber(data.sounds.volume) or 80
+				ZX.sounds.uiSounds = data.sounds.uiSounds ~= false
 				pcall(function() uiRefs.sounds_murderer:SetValue(ZX.sounds.murdererKill) end)
 				pcall(function() uiRefs.sounds_sheriff:SetValue(ZX.sounds.sheriffKill) end)
 				pcall(function() uiRefs.sounds_volume:SetValue(ZX.sounds.volume) end)
+				pcall(function() uiRefs.sounds_ui:SetValue(ZX.sounds.uiSounds) end)
 			end
 			if type(data.antiFling) == "table" then
 				ZX.antiFling.enabled = data.antiFling.enabled == true
