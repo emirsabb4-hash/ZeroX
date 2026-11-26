@@ -1286,20 +1286,68 @@ do
 
 	-- OVERDRIVE AUTO FARM (Standard & Safe Mode)
 	local farmBV = nil
+	local farmNoclipConn = nil
+	local cachedCoinContainer = nil
+	local lastCoinScan = 0
+
 	local function releaseFarm()
+		if farmNoclipConn then pcall(function() farmNoclipConn:Disconnect() end) farmNoclipConn = nil end
 		if farmBV then pcall(function() farmBV:Destroy() end) farmBV = nil end
 		local char = player.Character
 		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if hum then hum.PlatformStand = false end
+		if hum then
+			hum.PlatformStand = false
+			hum.AutoRotate = true
+		end
+		if char then
+			for _, partName in ipairs({ "Head", "Torso", "UpperTorso", "LowerTorso", "HumanoidRootPart" }) do
+				local p = char:FindFirstChild(partName)
+				if p and p:IsA("BasePart") then p.CanCollide = true end
+			end
+		end
 	end
 
 	local function findCoinContainer()
+		if cachedCoinContainer and cachedCoinContainer.Parent then
+			return cachedCoinContainer
+		end
+		for _, child in ipairs(Workspace:GetChildren()) do
+			if child.Name == "CoinContainer" then
+				cachedCoinContainer = child
+				return child
+			end
+			local cc = child:FindFirstChild("CoinContainer")
+			if cc then
+				cachedCoinContainer = cc
+				return cc
+			end
+		end
+		local now = os.clock()
+		if now - lastCoinScan < 1.5 then return nil end
+		lastCoinScan = now
 		for _, obj in ipairs(Workspace:GetDescendants()) do
-			if obj.Name == "CoinContainer" and obj:IsA("Instance") then
+			if obj.Name == "CoinContainer" then
+				cachedCoinContainer = obj
 				return obj
 			end
 		end
 		return nil
+	end
+
+	local function touchNearbyCoins(container, root)
+		if typeof(firetouchinterest) ~= "function" or not container or not root then return end
+		local rPos = root.Position
+		for _, c in ipairs(container:GetChildren()) do
+			local part = c:IsA("BasePart") and c or c:FindFirstChildWhichIsA("BasePart")
+			if part and part.Parent and part:FindFirstChild("TouchInterest") then
+				if (part.Position - rPos).Magnitude <= 18 then
+					pcall(function()
+						firetouchinterest(root, part, 0)
+						firetouchinterest(root, part, 1)
+					end)
+				end
+			end
+		end
 	end
 
 	local function isCoinBagFull()
@@ -1483,17 +1531,25 @@ do
 						return
 					end
 
-					for _, d in ipairs(char:GetDescendants()) do
-						if d:IsA("BasePart") then d.CanCollide = false end
+					if not farmNoclipConn then
+						farmNoclipConn = RunService.Stepped:Connect(function()
+							if not ZX.farm.enabled then return end
+							local c = player.Character
+							if not c then return end
+							for _, d in ipairs(c:GetChildren()) do
+								if d:IsA("BasePart") then d.CanCollide = false end
+							end
+						end)
 					end
 					if not farmBV or farmBV.Parent ~= root then
-						releaseFarm()
+						if farmBV then pcall(function() farmBV:Destroy() end) end
 						farmBV = Instance.new("BodyVelocity")
 						farmBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
 						farmBV.Velocity = Vector3.zero
 						farmBV.Parent = root
 					end
 					hum.PlatformStand = true
+					hum.AutoRotate = false
 
 					local speed = math.clamp(tonumber(ZX.farm.speed) or 23, 10, 40)
 					local layRot = isSafe and CFrame.Angles(math.rad(90), 0, 0) or CFrame.new()
@@ -1507,10 +1563,15 @@ do
 						local p = startPos:Lerp(targetPos, math.clamp(alpha, 0, 1))
 						root.CFrame = CFrame.new(p) * layRot
 						root.AssemblyLinearVelocity = Vector3.zero
+						root.AssemblyAngularVelocity = Vector3.zero
+						touchNearbyCoins(container, root)
 						RunService.Heartbeat:Wait()
 					end
-					if isSafe and coin.Parent and ZX.farm.enabled then
-						root.CFrame = CFrame.new(coin.Position - Vector3.new(0, 2.2, 0)) * layRot
+					if coin.Parent and ZX.farm.enabled then
+						if isSafe then
+							root.CFrame = CFrame.new(coin.Position - Vector3.new(0, 2.2, 0)) * layRot
+						end
+						touchNearbyCoins(container, root)
 						RunService.Heartbeat:Wait()
 					end
 					task.wait(math.clamp(tonumber(ZX.farm.delay) or 0.1, 0, 1.5))
@@ -2603,43 +2664,46 @@ do
 
 	local function normName(s)
 		s = tostring(s or ""):lower()
-		s = s:gsub("mixamorig:", "")
-		s = s:gsub("bip01%s*", "")
+		s = s:gsub("mixamorig[:_]?", "")
+		s = s:gsub("bip01[%s_]*", "")
+		s = s:gsub("valvebiped[%s_]*", "")
+		s = s:gsub("_%d+$", "")
 		s = s:gsub("[%s_%-%.]", "")
+		s = s:gsub("%d+$", "")
 		return s
 	end
 
+	local function isLeft(n)
+		return n:find("left") ~= nil or n:sub(1, 1) == "l" or n:sub(-1) == "l"
+	end
+
+	local function isRight(n)
+		return n:find("right") ~= nil or n:sub(1, 1) == "r" or n:sub(-1) == "r"
+	end
+
 	local function resolveMotorTarget(norm)
-		if norm == "hips" or norm == "pelvis" or norm == "root" or norm == "rootjoint" then
+		if norm:find("hips") or norm:find("pelvis") or norm == "root" or norm == "rootjoint" then
 			return "Root"
-		elseif norm:find("spine") or norm == "chest" or norm == "upperchest" or norm == "waist" or norm == "torso" then
+		elseif norm:find("spine") or norm:find("chest") or norm:find("waist") or norm:find("torso") then
 			return "Waist"
-		elseif norm == "neck" or norm == "head" then
+		elseif norm:find("head") or norm:find("neck") then
 			return "Neck"
-		elseif norm == "leftshoulder" or norm == "leftupperarm" or norm == "leftarm" or norm == "upperarml" or norm == "lupperarm" or norm == "larm" then
-			return "LeftShoulder"
-		elseif norm == "leftforearm" or norm == "leftlowerarm" or norm == "lowerarml" or norm == "lforearm" then
-			return "LeftElbow"
-		elseif norm == "lefthand" or norm == "lhand" or norm == "handl" then
-			return "LeftWrist"
-		elseif norm == "rightshoulder" or norm == "rightupperarm" or norm == "rightarm" or norm == "upperarmr" or norm == "rupperarm" or norm == "rarm" then
-			return "RightShoulder"
-		elseif norm == "rightforearm" or norm == "rightlowerarm" or norm == "lowerarmr" or norm == "rforearm" then
-			return "RightElbow"
-		elseif norm == "righthand" or norm == "rhand" or norm == "handr" then
-			return "RightWrist"
-		elseif norm == "leftupleg" or norm == "leftupperleg" or norm == "leftthigh" or norm == "lthigh" or norm == "upperlegl" then
-			return "LeftHip"
-		elseif norm == "leftleg" or norm == "leftlowerleg" or norm == "leftshin" or norm == "lcalf" or norm == "lowerlegl" then
-			return "LeftKnee"
-		elseif norm == "leftfoot" or norm == "lfoot" or norm == "footl" then
-			return "LeftAnkle"
-		elseif norm == "rightupleg" or norm == "rightupperleg" or norm == "rightthigh" or norm == "rthigh" or norm == "upperlegr" then
-			return "RightHip"
-		elseif norm == "rightleg" or norm == "rightlowerleg" or norm == "rightshin" or norm == "rcalf" or norm == "lowerlegr" then
-			return "RightKnee"
-		elseif norm == "rightfoot" or norm == "rfoot" or norm == "footr" then
-			return "RightAnkle"
+		elseif isLeft(norm) then
+			if norm:find("forearm") or norm:find("lowerarm") or norm:find("elbow") then return "LeftElbow"
+			elseif norm:find("hand") or norm:find("wrist") then return "LeftWrist"
+			elseif norm:find("upperarm") or norm:find("shoulder") or norm:find("clavicle") or norm:find("arm") then return "LeftShoulder"
+			elseif norm:find("upleg") or norm:find("upperleg") or norm:find("thigh") or norm:find("hip") then return "LeftHip"
+			elseif norm:find("lowerleg") or norm:find("shin") or norm:find("calf") or norm:find("knee") or norm:find("leg") then return "LeftKnee"
+			elseif norm:find("foot") or norm:find("ankle") then return "LeftAnkle"
+			end
+		elseif isRight(norm) then
+			if norm:find("forearm") or norm:find("lowerarm") or norm:find("elbow") then return "RightElbow"
+			elseif norm:find("hand") or norm:find("wrist") then return "RightWrist"
+			elseif norm:find("upperarm") or norm:find("shoulder") or norm:find("clavicle") or norm:find("arm") then return "RightShoulder"
+			elseif norm:find("upleg") or norm:find("upperleg") or norm:find("thigh") or norm:find("hip") then return "RightHip"
+			elseif norm:find("lowerleg") or norm:find("shin") or norm:find("calf") or norm:find("knee") or norm:find("leg") then return "RightKnee"
+			elseif norm:find("foot") or norm:find("ankle") then return "RightAnkle"
+			end
 		end
 		return nil
 	end
@@ -2705,10 +2769,8 @@ do
 		local model = template:Clone()
 		model.Name = "ZeroX_CustomChar"
 
-		local innerHum = model:FindFirstChildOfClass("Humanoid")
-		if innerHum then pcall(function() innerHum:Destroy() end) end
 		for _, s in ipairs(model:GetDescendants()) do
-			if s:IsA("Script") or s:IsA("LocalScript") then
+			if s:IsA("Humanoid") or s:IsA("AnimationController") or s:IsA("Animator") or s:IsA("Script") or s:IsA("LocalScript") then
 				pcall(function() s:Destroy() end)
 			end
 		end
@@ -2745,15 +2807,24 @@ do
 			return
 		end
 
+		hideOriginalChar(char)
+		model.Parent = char
+
 		if model:IsA("Model") then
 			if not model.PrimaryPart then model.PrimaryPart = anchorPart end
 			pcall(function()
 				local _, mSize = model:GetBoundingBox()
 				local _, pSize = char:GetBoundingBox()
-				if mSize.Y > 0.05 and pSize.Y > 0.05 then
-					local ratio = math.clamp(pSize.Y / mSize.Y, 0.05, 20)
-					if math.abs(ratio - 1) > 0.05 and model.ScaleTo then
-						model:ScaleTo(model:GetScale() * ratio)
+				if mSize.Y > 0.01 and pSize.Y > 0.05 then
+					local ratio = math.clamp(pSize.Y / mSize.Y, 0.01, 100)
+					if math.abs(ratio - 1) > 0.03 then
+						if model.ScaleTo then
+							model:ScaleTo(model:GetScale() * ratio)
+						else
+							for _, bp in ipairs(model:GetDescendants()) do
+								if bp:IsA("BasePart") then bp.Size = bp.Size * ratio end
+							end
+						end
 					end
 				end
 			end)
@@ -2766,9 +2837,6 @@ do
 		else
 			anchorPart.CFrame = hrp.CFrame
 		end
-
-		hideOriginalChar(char)
-		model.Parent = char
 
 		local weld = Instance.new("WeldConstraint")
 		weld.Part0 = hrp
