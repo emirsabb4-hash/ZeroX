@@ -83,10 +83,6 @@ local ZX = {
 		korblox  = false,
 		headless = false,
 	},
-	customChar = {
-		enabled  = false,
-		selected = "Iron Man Nano Tech",
-	},
 	skybox = {
 		selected = "Default",
 	},
@@ -2735,266 +2731,6 @@ do
 			if ZX.animations[cat] and ZX.animations[cat] ~= "Default" then
 				pcall(ApplyFEAnimation, cat, ZX.animations[cat])
 			end
-		end
-	end)
-end
-
--- =========================================================================
--- 6.5) CUSTOM CHARACTER (CLIENT-SIDE 3D MORPH)
--- =========================================================================
-local CUSTOM_CHAR_CATALOG = {
-	{ name = "Iron Man Nano Tech",     modelId = 98998646491999 },
-	{ name = "Spider-Man No Way Home", modelId = 100283756609740 },
-}
-
-local CUSTOM_CHAR_BY_NAME = {}
-local CUSTOM_CHAR_NAMES = {}
-for _, entry in ipairs(CUSTOM_CHAR_CATALOG) do
-	CUSTOM_CHAR_BY_NAME[entry.name] = entry
-	table.insert(CUSTOM_CHAR_NAMES, entry.name)
-end
-
-local ApplyCustomCharacter
-local RemoveCustomCharacter
-do
-	local _activeModel = nil
-	local _renderConn = nil
-	local _savedTrans = {}
-	local _modelCache = {}
-
-	local function normName(s)
-		s = tostring(s or ""):lower()
-		s = s:gsub("mixamorig[:_]?", "")
-		s = s:gsub("bip01[%s_]*", "")
-		s = s:gsub("valvebiped[%s_]*", "")
-		s = s:gsub("_%d+$", "")
-		s = s:gsub("[%s_%-%.]", "")
-		s = s:gsub("%d+$", "")
-		return s
-	end
-
-	local function isLeft(n)
-		return n:find("left") ~= nil or n:sub(1, 1) == "l" or n:sub(-1) == "l"
-	end
-
-	local function isRight(n)
-		return n:find("right") ~= nil or n:sub(1, 1) == "r" or n:sub(-1) == "r"
-	end
-
-	local function resolveMotorTarget(norm)
-		if norm:find("hips") or norm:find("pelvis") or norm == "root" or norm == "rootjoint" then
-			return "Root"
-		elseif norm:find("spine") or norm:find("chest") or norm:find("waist") or norm:find("torso") then
-			return "Waist"
-		elseif norm:find("head") or norm:find("neck") then
-			return "Neck"
-		elseif isLeft(norm) then
-			if norm:find("forearm") or norm:find("lowerarm") or norm:find("elbow") then return "LeftElbow"
-			elseif norm:find("hand") or norm:find("wrist") then return "LeftWrist"
-			elseif norm:find("upperarm") or norm:find("shoulder") or norm:find("clavicle") or norm:find("arm") then return "LeftShoulder"
-			elseif norm:find("upleg") or norm:find("upperleg") or norm:find("thigh") or norm:find("hip") then return "LeftHip"
-			elseif norm:find("lowerleg") or norm:find("shin") or norm:find("calf") or norm:find("knee") or norm:find("leg") then return "LeftKnee"
-			elseif norm:find("foot") or norm:find("ankle") then return "LeftAnkle"
-			end
-		elseif isRight(norm) then
-			if norm:find("forearm") or norm:find("lowerarm") or norm:find("elbow") then return "RightElbow"
-			elseif norm:find("hand") or norm:find("wrist") then return "RightWrist"
-			elseif norm:find("upperarm") or norm:find("shoulder") or norm:find("clavicle") or norm:find("arm") then return "RightShoulder"
-			elseif norm:find("upleg") or norm:find("upperleg") or norm:find("thigh") or norm:find("hip") then return "RightHip"
-			elseif norm:find("lowerleg") or norm:find("shin") or norm:find("calf") or norm:find("knee") or norm:find("leg") then return "RightKnee"
-			elseif norm:find("foot") or norm:find("ankle") then return "RightAnkle"
-			end
-		end
-		return nil
-	end
-
-	local function restoreOriginalParts()
-		for inst, orig in pairs(_savedTrans) do
-			pcall(function()
-				if inst and inst.Parent then
-					inst.Transparency = orig
-				end
-			end)
-		end
-		_savedTrans = {}
-	end
-
-	local function hideOriginalChar(char)
-		restoreOriginalParts()
-		if not char then return end
-		for _, desc in ipairs(char:GetDescendants()) do
-			if (desc:IsA("BasePart") or desc:IsA("Decal")) and desc.Name ~= "HumanoidRootPart" then
-				if not desc:FindFirstAncestorOfClass("Tool") and not desc:FindFirstAncestor("ZeroX_CustomChar") then
-					_savedTrans[desc] = desc.Transparency
-					pcall(function() desc.Transparency = 1 end)
-				end
-			end
-		end
-	end
-
-	RemoveCustomCharacter = function()
-		if _renderConn then
-			pcall(function() _renderConn:Disconnect() end)
-			_renderConn = nil
-		end
-		if _activeModel then
-			pcall(function() _activeModel:Destroy() end)
-			_activeModel = nil
-		end
-		restoreOriginalParts()
-	end
-
-	ApplyCustomCharacter = function()
-		RemoveCustomCharacter()
-		if not ZX.customChar.enabled then return end
-		local spec = CUSTOM_CHAR_BY_NAME[ZX.customChar.selected]
-		if not spec then return end
-
-		local char = player.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if not char or not hrp or not hum then return end
-
-		local template = _modelCache[spec.modelId]
-		if not template then
-			local ok, objs = pcall(function() return game:GetObjects("rbxassetid://" .. tostring(spec.modelId)) end)
-			if ok and type(objs) == "table" and objs[1] then
-				template = objs[1]
-				_modelCache[spec.modelId] = template
-			else
-				return
-			end
-		end
-
-		local model = template:Clone()
-		model.Name = "ZeroX_CustomChar"
-
-		for _, s in ipairs(model:GetDescendants()) do
-			if s:IsA("Humanoid") or s:IsA("AnimationController") or s:IsA("Animator") or s:IsA("Script") or s:IsA("LocalScript") then
-				pcall(function() s:Destroy() end)
-			end
-		end
-
-		local anchorPart = nil
-		local maxVol = -1
-		for _, p in ipairs(model:GetDescendants()) do
-			if p:IsA("BasePart") then
-				p.CanCollide = false
-				p.CanTouch = false
-				p.CanQuery = false
-				p.Massless = true
-				p.Anchored = false
-				local vol = p.Size.X * p.Size.Y * p.Size.Z
-				if p.Name == "HumanoidRootPart" or p.Name == "Torso" or p.Name == "UpperTorso" then
-					anchorPart = p
-					maxVol = math.huge
-				elseif vol > maxVol then
-					maxVol = vol
-					anchorPart = p
-				end
-			end
-		end
-		if model:IsA("BasePart") then
-			model.CanCollide = false
-			model.CanTouch = false
-			model.CanQuery = false
-			model.Massless = true
-			model.Anchored = false
-			anchorPart = model
-		end
-		if not anchorPart then
-			pcall(function() model:Destroy() end)
-			return
-		end
-
-		hideOriginalChar(char)
-		model.Parent = char
-
-		if model:IsA("Model") then
-			if not model.PrimaryPart then model.PrimaryPart = anchorPart end
-			pcall(function()
-				local _, mSize = model:GetBoundingBox()
-				local _, pSize = char:GetBoundingBox()
-				if mSize.Y > 0.01 and pSize.Y > 0.05 then
-					local ratio = math.clamp(pSize.Y / mSize.Y, 0.01, 100)
-					if math.abs(ratio - 1) > 0.03 then
-						if model.ScaleTo then
-							model:ScaleTo(model:GetScale() * ratio)
-						else
-							for _, bp in ipairs(model:GetDescendants()) do
-								if bp:IsA("BasePart") then bp.Size = bp.Size * ratio end
-							end
-						end
-					end
-				end
-			end)
-			local mCF, mSize = model:GetBoundingBox()
-			local pCF, pSize = char:GetBoundingBox()
-			local pBottom = pCF.Position.Y - (pSize.Y * 0.5)
-			local mBottom = mCF.Position.Y - (mSize.Y * 0.5)
-			local delta = Vector3.new(hrp.Position.X - mCF.Position.X, pBottom - mBottom, hrp.Position.Z - mCF.Position.Z)
-			model:PivotTo(model:GetPivot() + delta)
-		else
-			anchorPart.CFrame = hrp.CFrame
-		end
-
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = hrp
-		weld.Part1 = anchorPart
-		weld.Parent = anchorPart
-
-		-- Map player Motor6Ds for animation sync
-		local playerMotors = {}
-		for _, d in ipairs(char:GetDescendants()) do
-			if d:IsA("Motor6D") and not d:FindFirstAncestor("ZeroX_CustomChar") then
-				playerMotors[d.Name] = d
-			end
-		end
-
-		local boneLinks = {}
-		local motorLinks = {}
-		for _, d in ipairs(model:GetDescendants()) do
-			if d:IsA("Bone") then
-				local tName = resolveMotorTarget(normName(d.Name))
-				if tName and playerMotors[tName] then
-					table.insert(boneLinks, { bone = d, motor = playerMotors[tName], orig = d.Transform })
-				end
-			elseif d:IsA("Motor6D") then
-				local pm = playerMotors[d.Name] or playerMotors[resolveMotorTarget(normName(d.Name)) or ""]
-				if pm then
-					table.insert(motorLinks, { custom = d, motor = pm })
-				end
-			end
-		end
-
-		_activeModel = model
-		if #boneLinks > 0 or #motorLinks > 0 then
-			_renderConn = RunService.RenderStepped:Connect(function()
-				if not _activeModel or not _activeModel.Parent or not char.Parent then
-					RemoveCustomCharacter()
-					return
-				end
-				for _, link in ipairs(motorLinks) do
-					if link.custom.Parent and link.motor.Parent then
-						link.custom.Transform = link.motor.Transform
-					end
-				end
-				for _, link in ipairs(boneLinks) do
-					if link.bone.Parent and link.motor.Parent then
-						local tr = link.motor.Transform
-						local rot = tr - tr.Position
-						link.bone.Transform = link.orig * rot
-					end
-				end
-			end)
-		end
-	end
-
-	player.CharacterAdded:Connect(function(char)
-		char:WaitForChild("HumanoidRootPart", 8)
-		task.wait(0.3)
-		if ZX.customChar.enabled then
-			pcall(ApplyCustomCharacter)
 		end
 	end)
 end
@@ -25240,29 +24976,6 @@ do
 		Min = 0, Max = 10, Default = ZX.aura.angelicGlow,
 		Callback = function(v) pcall(updateAngelicNimbGlow, v) end,
 	})
-	uiRefs.customChar_enabled = charSec:AddLabel("Custom Character"):AddToggle({
-		Default = ZX.customChar.enabled,
-		Callback = function(v)
-			ZX.customChar.enabled = v == true
-			pcall(ApplyCustomCharacter)
-		end,
-	})
-	uiRefs.customChar_select = charSec:AddLabel("Character Model"):AddDropdown({
-		Values = CUSTOM_CHAR_NAMES,
-		Default = ZX.customChar.selected,
-		Callback = function(v)
-			ZX.customChar.selected = v
-			if ZX.customChar.enabled then pcall(ApplyCustomCharacter) end
-		end,
-	})
-	charSec:AddButton({
-		Name = "Reset Character",
-		Callback = function()
-			ZX.customChar.enabled = false
-			pcall(RemoveCustomCharacter)
-			pcall(function() if uiRefs.customChar_enabled and uiRefs.customChar_enabled.SetValue then uiRefs.customChar_enabled:SetValue(false) end end)
-		end,
-	})
 
 	local animSec = VisualsGroup.Character:AddSection({ Name = "Animation", Position = "right" })
 	uiRefs.anim_Idle = animSec:AddLabel("Idle"):AddDropdown({
@@ -25689,7 +25402,6 @@ do
 				},
 				screen = { stretched = ZX.screen.stretched, stretch = ZX.screen.stretch },
 				character = { korblox = ZX.character.korblox, headless = ZX.character.headless },
-				customChar = { enabled = ZX.customChar.enabled, selected = ZX.customChar.selected },
 				skybox = { selected = ZX.skybox.selected },
 				animations = {
 					Idle = ZX.animations.Idle,
@@ -25780,13 +25492,6 @@ do
 				pcall(applyHeadless, ZX.character.headless)
 				pcall(function() uiRefs.char_korblox:SetValue(ZX.character.korblox) end)
 				pcall(function() uiRefs.char_headless:SetValue(ZX.character.headless) end)
-			end
-			if type(data.customChar) == "table" then
-				ZX.customChar.enabled = data.customChar.enabled == true
-				if type(data.customChar.selected) == "string" then ZX.customChar.selected = data.customChar.selected end
-				pcall(function() if uiRefs.customChar_select and uiRefs.customChar_select.SetValue then uiRefs.customChar_select:SetValue(ZX.customChar.selected) end end)
-				pcall(function() if uiRefs.customChar_enabled and uiRefs.customChar_enabled.SetValue then uiRefs.customChar_enabled:SetValue(ZX.customChar.enabled) end end)
-				pcall(ApplyCustomCharacter)
 			end
 			if type(data.skybox) == "table" and type(data.skybox.selected) == "string" then
 				ZX.skybox.selected = data.skybox.selected
