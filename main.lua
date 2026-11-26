@@ -3064,6 +3064,7 @@ do
 		local char = player.Character
 		if not char then return end
 		local c = ZX.aura.angelicColor or Color3.fromRGB(165, 225, 255)
+		local g = math.clamp(tonumber(ZX.aura.angelicGlow) or 2, 0, 10)
 
 		if ZX.aura.angelic then
 			local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
