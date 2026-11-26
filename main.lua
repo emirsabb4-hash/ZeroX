@@ -73,6 +73,7 @@ local ZX = {
 		angelic       = false,
 		nimb          = false,
 		angelicColor  = Color3.fromRGB(165, 225, 255),
+		angelicGlow   = 2,
 	},
 	screen = {
 		stretched = false,
@@ -3003,6 +3004,7 @@ end
 -- =========================================================================
 local applyAngelicNimb
 local updateAngelicNimbColor
+local updateAngelicNimbGlow
 do
 	local activeItems = {}
 	local activeColor = nil
@@ -3036,9 +3038,23 @@ do
 			ZX.aura.angelicColor = col
 		end
 		local c = ZX.aura.angelicColor or Color3.fromRGB(165, 225, 255)
+		local g = math.clamp(tonumber(ZX.aura.angelicGlow) or 2, 0, 10)
 		for _, item in ipairs(activeItems) do
 			if item and item.Parent and item:IsA("ParticleEmitter") then
 				pcall(function() item.Color = ColorSequence.new(c) end)
+			end
+		end
+	end
+
+	updateAngelicNimbGlow = function(val)
+		local g = math.clamp(tonumber(val) or 2, 0, 10)
+		ZX.aura.angelicGlow = g
+		for _, item in ipairs(activeItems) do
+			if item and item.Parent and item:IsA("ParticleEmitter") then
+				pcall(function()
+					item.Brightness = g
+					item.LightEmission = (g > 0) and 1 or 0
+				end)
 			end
 		end
 	end
@@ -3063,7 +3079,8 @@ do
 					NumberSequenceKeypoint.new(0.8, 0),
 					NumberSequenceKeypoint.new(1, 1),
 				})
-				wingL.LightEmission = 1
+				wingL.LightEmission = (g > 0) and 1 or 0
+				wingL.Brightness = g
 				wingL.Color = ColorSequence.new(c)
 				wingL.Speed = NumberRange.new(0.05, 0.05)
 				wingL.Size = NumberSequence.new(2.75, 3.5)
@@ -3093,10 +3110,10 @@ do
 					NumberSequenceKeypoint.new(0.5, 0.3),
 					NumberSequenceKeypoint.new(1, 1),
 				})
-				burst.LightEmission = 1
+				burst.LightEmission = (g > 0) and 1 or 0
 				burst.Color = ColorSequence.new(c)
 				burst.Speed = NumberRange.new(0.5, 0.5)
-				burst.Brightness = 2
+				burst.Brightness = g
 				burst.Size = NumberSequence.new(3, 4)
 				burst.Rate = 5
 				burst.Texture = "rbxassetid://11402221943"
@@ -3123,10 +3140,10 @@ do
 						NumberSequenceKeypoint.new(0.8, 0),
 						NumberSequenceKeypoint.new(1, 1),
 					})
-					emitter.LightEmission = 1
+					emitter.LightEmission = (g > 0) and 1 or 0
 					emitter.Color = ColorSequence.new(c)
 					emitter.Speed = NumberRange.new(0.001, 0.001)
-					emitter.Brightness = 2
+					emitter.Brightness = g
 					emitter.Size = (idx == 1) and NumberSequence.new(2.5, 3) or NumberSequence.new(2, 3)
 					emitter.RotSpeed = NumberRange.new(-400, 400)
 					emitter.Rate = 7
@@ -10223,7 +10240,7 @@ local reel = {
 visualsui.tonelist = { "Click", "Bubble", "Hentai" }
 visualsui.tones = {}
 visualsui.tone = "Click"
-visualsui.sound = false
+visualsui.sound = true
 
 local spare = "rbxasset://sounds/electronicpingshort.wav"
 local barns = { "visualsui/", "visualssnd/", "assets/", "" }
@@ -21196,25 +21213,8 @@ function visualsui:window(cfg)
 		end)
 	end
 
-	local function playZeroXUiSound(id, vol)
-		if ZX and ZX.sounds and ZX.sounds.uiSounds == false then return end
-		pcall(function()
-			local ss = game:GetService("SoundService")
-			local s = Instance.new("Sound")
-			s.Name = "ZeroX_UISound"
-			s.SoundId = id
-			s.Volume = vol or 0.35
-			s.Parent = ss
-			s:Play()
-			s.Ended:Connect(function() pcall(function() s:Destroy() end) end)
-			task.delay(2, function() if s and s.Parent then pcall(function() s:Destroy() end) end end)
-		end)
-	end
-
 	function win:toggle()
-		local nextOpen = not win.open
-		playZeroXUiSound(nextOpen and "rbxassetid://6895079853" or "rbxassetid://9119713951", 0.35)
-		win:render(nextOpen)
+		win:render(not win.open)
 	end
 
 	conn(shell:GetPropertyChangedSignal("Visible"), function()
@@ -23909,31 +23909,13 @@ local function makeRow(section, caption)
 		cfg = cfg or {};
 
 		local target, name = placeFor("Enabled");
-		local origCb = cfg.Callback;
-		local wrappedCb = function(v)
-			if not (lib.quiet or lib.configApplying) and ZX and ZX.sounds and ZX.sounds.uiSounds ~= false then
-				pcall(function()
-					local ss = game:GetService("SoundService")
-					local s = Instance.new("Sound")
-					s.Name = "ZeroX_ToggleSound"
-					s.SoundId = "rbxasset://sounds/clickfast.wav"
-					s.Volume = 0.3
-					s.PlaybackSpeed = v and 1.15 or 0.88
-					s.Parent = ss
-					s:Play()
-					s.Ended:Connect(function() pcall(function() s:Destroy() end) end)
-					task.delay(1.5, function() if s and s.Parent then pcall(function() s:Destroy() end) end end)
-				end)
-			end
-			if origCb then origCb(v) end
-		end;
 
 		local element = target:toggle({
 			name = name,
 			default = cfg.Default and true or false,
 			options = true,
 			flag = cfg.Flag,
-			callback = report(cfg.Flag, wrappedCb),
+			callback = report(cfg.Flag, cfg.Callback),
 		});
 
 		row.__toggle = element;
@@ -24919,6 +24901,7 @@ do
 	})
 
 	ZX.menuFrame = Window.Frame
+	pcall(function() NeverLose.Lib:setsound(ZX.sounds.uiSounds ~= false) end)
 	local uiRefs = {}
 
 	local refreshTouchButton
@@ -25252,6 +25235,10 @@ do
 		Default = ZX.aura.angelicColor,
 		Callback = function(c) pcall(updateAngelicNimbColor, c) end,
 	})
+	uiRefs.aura_angelicGlow = charSec:AddLabel("Angelic / Nimb Glow"):AddSlider({
+		Min = 0, Max = 10, Default = ZX.aura.angelicGlow,
+		Callback = function(v) pcall(updateAngelicNimbGlow, v) end,
+	})
 	uiRefs.customChar_enabled = charSec:AddLabel("Custom Character"):AddToggle({
 		Default = ZX.customChar.enabled,
 		Callback = function(v)
@@ -25457,10 +25444,7 @@ do
 		Default = ZX.sounds.sheriffKill,
 		Callback = function(v) if type(v) == "string" then ZX.sounds.sheriffKill = v end end,
 	})
-	uiRefs.sounds_ui = sndSec:AddLabel("UI Sounds"):AddToggle({
-		Default = ZX.sounds.uiSounds,
-		Callback = function(v) ZX.sounds.uiSounds = v == true end,
-	})
+
 	uiRefs.sounds_volume = sndSec:AddLabel("Volume"):AddSlider({
 		Min = 0, Max = 100, Default = ZX.sounds.volume,
 		Callback = function(v) ZX.sounds.volume = v end,
@@ -25700,6 +25684,7 @@ do
 					angelic = ZX.aura.angelic,
 					nimb = ZX.aura.nimb,
 					angelicColor = ZX.aura.angelicColor and { ZX.aura.angelicColor.R, ZX.aura.angelicColor.G, ZX.aura.angelicColor.B } or nil,
+					angelicGlow = ZX.aura.angelicGlow,
 				},
 				screen = { stretched = ZX.screen.stretched, stretch = ZX.screen.stretch },
 				character = { korblox = ZX.character.korblox, headless = ZX.character.headless },
@@ -25828,6 +25813,7 @@ do
 				if type(data.aura.angelicColor) == "table" and #data.aura.angelicColor >= 3 then
 					ZX.aura.angelicColor = Color3.new(data.aura.angelicColor[1], data.aura.angelicColor[2], data.aura.angelicColor[3])
 				end
+				ZX.aura.angelicGlow = tonumber(data.aura.angelicGlow) or 2
 				pcall(applyAuras)
 				pcall(applyAngelicNimb)
 				pcall(function() uiRefs.aura_whiteSpark:SetValue(ZX.aura.whiteSpark) end)
@@ -25835,6 +25821,7 @@ do
 				pcall(function() uiRefs.aura_angelic:SetValue(ZX.aura.angelic) end)
 				pcall(function() uiRefs.aura_nimb:SetValue(ZX.aura.nimb) end)
 				pcall(function() uiRefs.aura_angelicColor:SetValue(ZX.aura.angelicColor) end)
+				pcall(function() uiRefs.aura_angelicGlow:SetValue(ZX.aura.angelicGlow) end)
 			end
 			if type(data.screen) == "table" then
 				ZX.screen.stretched = data.screen.stretched == true
@@ -25901,6 +25888,7 @@ do
 				if type(data.sounds.sheriffKill) == "string" then ZX.sounds.sheriffKill = data.sounds.sheriffKill end
 				ZX.sounds.volume = tonumber(data.sounds.volume) or 80
 				ZX.sounds.uiSounds = data.sounds.uiSounds ~= false
+				pcall(function() NeverLose.Lib:setsound(ZX.sounds.uiSounds) end)
 				pcall(function() uiRefs.sounds_murderer:SetValue(ZX.sounds.murdererKill) end)
 				pcall(function() uiRefs.sounds_sheriff:SetValue(ZX.sounds.sheriffKill) end)
 				pcall(function() uiRefs.sounds_volume:SetValue(ZX.sounds.volume) end)
@@ -25929,6 +25917,13 @@ do
 		})
 
 		local cfgActSec = SettingsGroup.Config:AddSection({ Name = "Actions", Position = "right" })
+		uiRefs.sounds_ui = cfgActSec:AddLabel("UI Sounds"):AddToggle({
+			Default = ZX.sounds.uiSounds,
+			Callback = function(v)
+				ZX.sounds.uiSounds = v == true
+				pcall(function() NeverLose.Lib:setsound(ZX.sounds.uiSounds) end)
+			end,
+		})
 		cfgActSec:AddButton({
 			Name = "Save Config",
 			Callback = function()
