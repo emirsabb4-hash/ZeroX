@@ -2771,6 +2771,7 @@ do
 		end
 		local c = ZX.aura.angelicColor or Color3.fromRGB(165, 225, 255)
 		local g = math.clamp(tonumber(ZX.aura.angelicGlow) or 2, 0, 10)
+		local isMob = game:GetService("UserInputService").TouchEnabled
 		for _, item in ipairs(activeItems) do
 			if item and item.Parent and item:IsA("ParticleEmitter") then
 				pcall(function() item.Color = ColorSequence.new(c) end)
@@ -2817,7 +2818,8 @@ do
 				wingL.Color = ColorSequence.new(c)
 				wingL.Speed = NumberRange.new(0.05, 0.05)
 				wingL.Size = NumberSequence.new(2.75, 3.5)
-				wingL.Rate = 4
+				wingL.Rate = isMob and 12 or 4
+				wingL.Brightness = isMob and math.max(g, 3.5) or g
 				wingL.Texture = "rbxassetid://13267054240"
 				wingL.EmissionDirection = Enum.NormalId.Back
 				wingL.Orientation = Enum.ParticleOrientation.VelocityPerpendicular
@@ -2848,7 +2850,7 @@ do
 				burst.Speed = NumberRange.new(0.5, 0.5)
 				burst.Brightness = g
 				burst.Size = NumberSequence.new(3, 4)
-				burst.Rate = 5
+				burst.Rate = isMob and 12 or 5
 				burst.Texture = "rbxassetid://11402221943"
 				burst.FlipbookMode = Enum.ParticleFlipbookMode.OneShot
 				burst.Rotation = NumberRange.new(0, 360)
@@ -2879,7 +2881,8 @@ do
 					emitter.Brightness = g
 					emitter.Size = (idx == 1) and NumberSequence.new(2.5, 3) or NumberSequence.new(2, 3)
 					emitter.RotSpeed = NumberRange.new(-400, 400)
-					emitter.Rate = 7
+					emitter.Rate = isMob and 20 or 7
+					emitter.Brightness = isMob and math.max(g, 3.5) or g
 					emitter.Texture = "rbxassetid://8819682608"
 					emitter.Orientation = Enum.ParticleOrientation.VelocityPerpendicular
 					emitter.Rotation = NumberRange.new(0, 360)
@@ -15864,6 +15867,28 @@ function visualsui:window(cfg)
 
 				new("UIStroke", { Color = th.line, Transparency = 0.6 }, brim)
 
+				local searchBox = new("TextBox", {
+					Name = rnd(),
+					Position = UDim2.fromOffset(6, 6),
+					Size = UDim2.new(1, -12, 0, 22),
+					BackgroundColor3 = th.head,
+					BackgroundTransparency = 0.15,
+					BorderSizePixel = 0,
+					ClearTextOnFocus = false,
+					Font = Enum.Font.GothamBold,
+					PlaceholderColor3 = th.dim,
+					PlaceholderText = "Search...",
+					Text = "",
+					TextColor3 = th.text,
+					TextSize = 12,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					Visible = false,
+					ZIndex = 36,
+				}, hull)
+				round(searchBox, 5)
+				new("UIStroke", { Color = th.line, Transparency = 0.5 }, searchBox)
+				new("UIPadding", { PaddingLeft = UDim.new(0, 7), PaddingRight = UDim.new(0, 7) }, searchBox)
+
 				local roll = new("ScrollingFrame", {
 					Name = rnd(),
 
@@ -16014,8 +16039,24 @@ function visualsui:window(cfg)
 					end
 				end
 
+				local function applySearchFilter()
+					local q = tostring(searchBox.Text or ""):lower():match("^%s*(.-)%s*$") or ""
+					for _, o in ipairs(drop.leaf) do
+						if o.head and o.head.Parent then
+							o.head.Visible = (q == "") or (tostring(o.name):lower():find(q, 1, true) ~= nil)
+						end
+					end
+					roll.CanvasSize = UDim2.fromOffset(0, acs(lay).Y + 12)
+				end
+
+				searchBox:GetPropertyChangedSignal("Text"):Connect(applySearchFilter)
+
 				local function refit()
-					drop.h = tallness()
+					local hasSearch = #t.list >= 12
+					searchBox.Visible = hasSearch
+					roll.Position = hasSearch and UDim2.fromOffset(0, 28) or UDim2.new()
+					roll.Size = hasSearch and UDim2.new(1, 0, 1, -28) or UDim2.fromScale(1, 1)
+					drop.h = tallness() + (hasSearch and 28 or 0)
 
 					hull.Size = UDim2.fromOffset(drop.w, drop.h)
 
@@ -16378,7 +16419,13 @@ function visualsui:window(cfg)
 							130,
 							math.max(math.floor(rz.X) - 16, 130)
 						)
-						drop.h = tallness()
+						local hasSearch = #t.list >= 12
+						searchBox.Visible = hasSearch
+						searchBox.Text = ""
+						roll.Position = hasSearch and UDim2.fromOffset(0, 28) or UDim2.new()
+						roll.Size = hasSearch and UDim2.new(1, 0, 1, -28) or UDim2.fromScale(1, 1)
+						applySearchFilter()
+						drop.h = tallness() + (hasSearch and 28 or 0)
 
 						local under = rz.Y - (pp.Y - rp.Y + ps.Y + 6) - 6
 						local over = pp.Y - rp.Y - 12
@@ -24801,19 +24848,6 @@ do
 		Values = GAZER_ANIM_NAMES.Climb,
 		Default = ZX.animations.Climb,
 		Callback = function(v) pcall(ApplyFEAnimation, "Climb", v) end,
-	})
-	animSec:AddButton({
-		Name = "Equip Chill Boy Pack",
-		Callback = function()
-			for _, cat in ipairs(GAZER_ANIM_CATS) do
-				ZX.animations[cat] = "Chill Boy"
-				pcall(ApplyFEAnimation, cat, "Chill Boy")
-				pcall(function()
-					local r = uiRefs["anim_" .. cat]
-					if r and r.SetValue then r:SetValue("Chill Boy") end
-				end)
-			end
-		end,
 	})
 	animSec:AddButton({
 		Name = "Reset Animations",
