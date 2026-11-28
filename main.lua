@@ -1562,7 +1562,7 @@ do
 
 					local speed = math.clamp(tonumber(ZX.farm.speed) or 23, 10, 40)
 					local layRot = isSafe and CFrame.Angles(math.rad(90), 0, 0) or CFrame.new()
-					local targetPos = coin.Position + (isSafe and Vector3.new(0, -3.6, 0) or Vector3.new(0, 0, 0))
+					local targetPos = coin.Position + (isSafe and Vector3.new(0, -6.5, 0) or Vector3.new(0, 0, 0))
 					local dist = (targetPos - root.Position).Magnitude
 					local stepTime = math.clamp(dist / speed, 0.05, 3.0)
 					local tEnd = os.clock() + stepTime
@@ -1576,12 +1576,15 @@ do
 						root.AssemblyLinearVelocity = Vector3.zero
 						root.AssemblyAngularVelocity = Vector3.zero
 						touchNearbyCoins(container, root)
+						if not coin.Parent or not (coin:FindFirstChildOfClass("TouchTransmitter") or coin:FindFirstChild("TouchInterest")) then
+							break
+						end
+						if isSafe and (coin.Position - root.Position).Magnitude <= 14 then
+							break
+						end
 						RunService.Heartbeat:Wait()
 					end
-					if coin.Parent and ZX.farm.enabled then
-						if isSafe then
-							root.CFrame = CFrame.new(coin.Position - Vector3.new(0, 2.2, 0)) * layRot
-						end
+					if coin.Parent and ZX.farm.enabled and (coin:FindFirstChildOfClass("TouchTransmitter") or coin:FindFirstChild("TouchInterest")) then
 						touchNearbyCoins(container, root)
 						RunService.Heartbeat:Wait()
 					end
