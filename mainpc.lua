@@ -1344,8 +1344,8 @@ do
 		local rPos = root.Position
 		for _, c in ipairs(container:GetChildren()) do
 			local part = c:IsA("BasePart") and c or c:FindFirstChildWhichIsA("BasePart")
-			if part and part.Parent and part:FindFirstChild("TouchInterest") then
-				if (part.Position - rPos).Magnitude <= 18 then
+			if part and part.Parent and (part:FindFirstChildOfClass("TouchTransmitter") or part:FindFirstChild("TouchInterest")) then
+				if (part.Position - rPos).Magnitude <= 22 then
 					pcall(function()
 						firetouchinterest(root, part, 0)
 						firetouchinterest(root, part, 1)
@@ -1410,10 +1410,13 @@ do
 		end
 		local lastShot = 0
 		while ZX.farm.enabled and hum.Health > 0 and mHum.Health > 0 and mRoot.Parent do
+			hum.PlatformStand = true
+			hum.AutoRotate = false
 			-- Katil nereye giderse gitsin 12 stud arkasında sabit kal (bıçak menzili dışı)
 			local behindPos = (mRoot.CFrame * CFrame.new(0, 0, 12)).Position
 			root.CFrame = CFrame.new(behindPos, Vector3.new(mRoot.Position.X, behindPos.Y, mRoot.Position.Z))
 			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
 			if os.clock() - lastShot >= 0.45 and not isShooting then
 				lastShot = os.clock()
 				pcall(function() fireAtMurderer(gun) end)
@@ -1443,47 +1446,65 @@ do
 						return
 					end
 
+					if not farmNoclipConn then
+						farmNoclipConn = RunService.Stepped:Connect(function()
+							if not ZX.farm.enabled then return end
+							local c = player.Character
+							if not c then return end
+							for _, d in ipairs(c:GetDescendants()) do
+								if d:IsA("BasePart") then d.CanCollide = false end
+							end
+						end)
+					end
+
 					local isSafe = (ZX.farm.mode == "Safe")
 					if isSafe and isCoinBagFull() then
 						local myRole = getRole(player)
 						if myRole == "Murderer" then
-							local knife = nil
-							for _, t in ipairs(char:GetChildren()) do
-								if t:IsA("Tool") and weaponKind(t) == "Knife" then knife = t break end
-							end
-							if not knife then
-								local bp = player:FindFirstChild("Backpack")
-								if bp then
-									for _, t in ipairs(bp:GetChildren()) do
-										if t:IsA("Tool") and weaponKind(t) == "Knife" then knife = t break end
+							-- Menüdeki Kill Aura toggle'ını açmadan sadece bu raunt herkes ölene kadar tek seferlik kill
+							local targets = {}
+							for _, p in ipairs(Players:GetPlayers()) do
+								if p ~= player and p.Character then
+									local pHum = p.Character:FindFirstChildOfClass("Humanoid")
+									local pRoot = p.Character:FindFirstChild("HumanoidRootPart")
+									if pHum and pRoot and pHum.Health > 0 and not isPlayerInLobby(pRoot) then
+										table.insert(targets, pRoot)
 									end
 								end
 							end
-							if knife then
-								if knife.Parent ~= char then
-									hum:EquipTool(knife)
-									task.wait(0.05)
+							if #targets > 0 then
+								local knife = nil
+								for _, t in ipairs(char:GetChildren()) do
+									if t:IsA("Tool") and weaponKind(t) == "Knife" then knife = t break end
 								end
-								local handle = knife:FindFirstChild("Handle") or knife:FindFirstChildWhichIsA("BasePart")
-								if handle then
-									pcall(function()
-										local stab = knife:FindFirstChild("Stab", true)
-										if stab and stab:IsA("RemoteEvent") then stab:FireServer("Slash") end
-										knife:Activate()
-									end)
-									for _, p in ipairs(Players:GetPlayers()) do
-										if p ~= player and p.Character then
-											local pHum = p.Character:FindFirstChildOfClass("Humanoid")
-											local pRoot = p.Character:FindFirstChild("HumanoidRootPart")
-											if pHum and pRoot and pHum.Health > 0 and not isPlayerInLobby(pRoot) then
-												if typeof(firetouchinterest) == "function" then
-													pcall(function()
-														firetouchinterest(pRoot, handle, 0)
-														firetouchinterest(pRoot, handle, 1)
-													end)
-												else
-													pcall(function() pRoot.CFrame = handle.CFrame end)
-												end
+								if not knife then
+									local bp = player:FindFirstChild("Backpack")
+									if bp then
+										for _, t in ipairs(bp:GetChildren()) do
+											if t:IsA("Tool") and weaponKind(t) == "Knife" then knife = t break end
+										end
+									end
+								end
+								if knife then
+									if knife.Parent ~= char then
+										hum:EquipTool(knife)
+										task.wait(0.05)
+									end
+									local handle = knife:FindFirstChild("Handle") or knife:FindFirstChildWhichIsA("BasePart")
+									if handle then
+										pcall(function()
+											local stab = knife:FindFirstChild("Stab", true)
+											if stab and stab:IsA("RemoteEvent") then stab:FireServer("Slash") end
+											knife:Activate()
+										end)
+										for _, pRoot in ipairs(targets) do
+											if typeof(firetouchinterest) == "function" then
+												pcall(function()
+													firetouchinterest(pRoot, handle, 0)
+													firetouchinterest(pRoot, handle, 1)
+												end)
+											else
+												pcall(function() pRoot.CFrame = handle.CFrame end)
 											end
 										end
 									end
@@ -1493,40 +1514,30 @@ do
 							return
 						end
 						if myRole ~= "Murderer" then
-							-- Şerif değilsek ve silah yoksa Şerifi flingleyip silahı al
-							if not findMyGun() then
-								if findGunDrop() then
-									triggerGrabGun()
-									task.wait(0.25)
-								else
-									local sher = getSheriffPlayer()
-									if sher then
-										flingTargetDownward(sher)
-										task.wait(0.4)
-										if findGunDrop() then
-											triggerGrabGun()
-											task.wait(0.25)
-										end
-									end
-								end
+							if not findMyGun() and findGunDrop() then
+								triggerGrabGun()
+								task.wait(0.25)
 							end
-							-- Silahımız varsa (veya zaten Şerifsek) katilin arkasında sabitlenip vur
 							if findMyGun() then
 								lockBehindAndShootMurderer(char, root, hum)
 								releaseFarm()
 								return
 							end
 						end
-						-- Katilin olmadığı güvenli mesafede bekle
+						-- Katilin olmadığı güvenli mesafede yatay bekle
 						local murd = getMurdererPlayer()
 						local mRoot = murd and murd.Character and murd.Character:FindFirstChild("HumanoidRootPart")
 						if mRoot and (root.Position - mRoot.Position).Magnitude < 45 then
 							local away = (root.Position - mRoot.Position)
 							local dir = away.Magnitude > 0.1 and away.Unit or Vector3.new(1, 0, 0)
-							root.CFrame = CFrame.new(mRoot.Position + dir * 55 + Vector3.new(0, 6, 0)) * CFrame.Angles(math.rad(90), 0, 0)
+							hum.PlatformStand = true
+							hum.AutoRotate = false
+							local goal = mRoot.Position + dir * 55 + Vector3.new(0, 6, 0)
+							local stepPos = root.Position:Lerp(goal, 0.35)
+							root.CFrame = CFrame.new(stepPos) * CFrame.Angles(math.rad(90), 0, 0)
 							root.AssemblyLinearVelocity = Vector3.zero
 						end
-						task.wait(0.2)
+						task.wait(0.15)
 						return
 					end
 
@@ -1534,17 +1545,6 @@ do
 					if not coin then
 						releaseFarm()
 						return
-					end
-
-					if not farmNoclipConn then
-						farmNoclipConn = RunService.Stepped:Connect(function()
-							if not ZX.farm.enabled then return end
-							local c = player.Character
-							if not c then return end
-							for _, d in ipairs(c:GetChildren()) do
-								if d:IsA("BasePart") then d.CanCollide = false end
-							end
-						end)
 					end
 					if not farmBV or farmBV.Parent ~= root then
 						if farmBV then pcall(function() farmBV:Destroy() end) end
@@ -1564,6 +1564,8 @@ do
 					local tEnd = os.clock() + stepTime
 					local startPos = root.Position
 					while os.clock() < tEnd and ZX.farm.enabled and coin.Parent and hum.Health > 0 do
+						hum.PlatformStand = true
+						hum.AutoRotate = false
 						local alpha = 1 - ((tEnd - os.clock()) / stepTime)
 						local p = startPos:Lerp(targetPos, math.clamp(alpha, 0, 1))
 						root.CFrame = CFrame.new(p) * layRot
